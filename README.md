@@ -148,6 +148,8 @@ Nerd uses trunk-based development:
 3. Push the work branch and open a pull request.
 4. Merge only after the required `rust` and `dependencies` checks pass and review conversations are resolved.
 
+Documentation-only pull requests retain the required check names but skip the full Rust and dependency validation steps.
+
 Direct post-bootstrap pushes to `main` are prohibited. See [`context/versioning.md`](context/versioning.md) for the complete policy.
 
 ## License
