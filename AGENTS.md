@@ -102,6 +102,8 @@ Do not rely on training knowledge for Tauri, React, Rust crates, Windows APIs, N
 
 - Use trunk-based development with `main` as the single long-lived, releasable branch.
 - Use short-lived branch names defined in `context/versioning.md`.
+- After repository bootstrap, never commit or push directly to `main`; push a short-lived branch and use a pull request.
+- Required CI checks and review conversations must pass before merge.
 - Use Conventional Commits for every commit.
 - Keep one logical change per commit.
 - Use preferred scopes from `context/versioning.md`.
