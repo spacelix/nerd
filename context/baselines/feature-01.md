@@ -34,7 +34,7 @@
 - `CTRL_BREAK` produced graceful exit code `0` in 20.5 ms, within the shared four-second shutdown deadline.
 - After shutdown, `nerd status` returned daemon-absent code `3` and no daemon process remained.
 - Test-created `%LOCALAPPDATA%\Nerd` state, temporary user, profile, and DPAPI-protected credential handoff were removed after handles closed.
-- `cargo fmt --all -- --check`, strict workspace Clippy, all 27 workspace tests, release build, application-version consistency, and cargo-deny advisory/bans/license/source checks passed before the release measurement.
+- `cargo fmt --all -- --check`, strict workspace Clippy, all 28 workspace tests, release build, application-version consistency, and cargo-deny advisory/bans/license/source checks passed before the release measurement.
 - Forced IPC deadline coverage verified that an active task is aborted, joined, and removed from the active-task registry.
 
 ## Scope
