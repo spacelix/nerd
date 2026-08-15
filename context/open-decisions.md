@@ -19,8 +19,8 @@ This register contains unresolved choices that can change implementation. Do not
 | OD-003 | PostgreSQL EDB ZIP URL/API, checksum/signature, license, and Windows 10 support | Feature 10 PostgreSQL | researching | Approved artifact record in `library-docs.md` |
 | OD-004 | Redis strategy: Memurai, explicit Garnet, external-only Redis, or removal from MVP | Feature 10 cache | blocked | Accepted replacement/update to ADR 006 and Feature 10 |
 | OD-005 | Windows code-signing provider and private-key custody | Public beta, Feature 12 | open | Signing runbook and CI identity policy |
-| OD-006 | NRPT compatibility spike on Windows 10 Home/Pro, VPN, browser secure DNS, and sleep/resume | Feature 02 | open | Spike report and supported matrix |
-| OD-007 | Exact minimum Windows 10 build | Installer and support | open | Supported build number and test image |
+| OD-006 | NRPT compatibility spike on Windows 10 Home/Pro, VPN, browser secure DNS, and sleep/resume | Feature 02 | researching | Spike report and supported matrix; read-only probe evidence committed, mutation/browser/sleep phases pending approval |
+| OD-007 | Exact minimum Windows 10 build | Installer and support | researching | Proposal: 22H2 build 19045 x64; pending Windows 10 22H2 test-image verification |
 
 ## Decisions Before Relevant Feature
 

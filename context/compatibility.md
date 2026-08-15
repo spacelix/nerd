@@ -8,7 +8,7 @@ This file defines support claims and mandatory test dimensions. `Required` means
 
 | Target | MVP status | Notes |
 |---|---|---|
-| Windows 10 x64 | Required | Exact minimum build is OD-007 |
+| Windows 10 x64 | Required | Minimum proposal is 22H2 build 19045 (OD-007, researching); Windows 10 Home/Pro reached end of support 2025-10-14 |
 | Windows 11 x64 | Required | Current supported releases |
 | Windows ARM64 | Unsupported | Post-MVP Feature 14 |
 | Windows Server | Unsupported | Not an MVP target |
@@ -85,7 +85,7 @@ Exact versions are selected when Feature 05 begins and recorded in `library-docs
 | Firefox trust behavior | Required diagnostic/support decision during Feature 02 |
 | SSE | Required |
 | WebSocket/HMR | Required |
-| VPN/corporate DNS | Feature 02 compatibility spike |
+| VPN/corporate DNS | Feature 02 compatibility spike (OD-006 researching; Tailscale coexistence evidence collected, mutation test pending) |
 | LAN/public access | Unsupported, post-MVP Feature 15 |
 
 ## Services
