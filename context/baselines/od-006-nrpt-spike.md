@@ -49,19 +49,42 @@ Produce a supported matrix for wildcard `.test` resolution through Windows NRPT 
 3. **Browser secure DNS bypasses NRPT.** Chrome/Edge Secure DNS and Firefox DoH resolve outside the Windows DNS client. Without explicit handling, a `.test` URL can fail when a browser is configured to resolve via an external DoH provider. Proposed behavior: Nerd detects this condition and reports a diagnostic; it never bypasses browser policy or configures browsers.
 4. **Port 53 UDP is already owned on this machine.** UDP `0.0.0.0:53` is bound by `svchost` (PID 892) hosting the Host Network Service (`hns`) and SharedAccess services, active because WSL2 networking is running. The spike responder cannot bind UDP 53 while this relay is active, and a Nerd daemon binding `127.0.0.1:53` would conflict with it. This confirms the Feature 02 requirement to detect and report port conflicts rather than terminate the foreign listener. `.test` resolution cannot be end-to-end verified on this machine until the conflicting service is stopped or the test runs on a clean image.
 
+## Mutation Test
+
+`tests/windows/od006-nrpt-mutate.ps1` was run elevated on the same Windows 11 Home 25H2 machine. It snapshots existing NRPT rules, adds a temporary `.test` namespace rule pointing to `127.0.0.1`, checks for a port-53 listener, optionally starts the loopback responder, attempts resolution, removes the rule, and verifies the original rule set is restored.
+
+| Step | Status | Detail |
+|---|---|---|
+| snapshot | ok | 2 existing Tailscale MagicDNS rules captured |
+| port-53 | conflict | UDP 53 owned by a foreign listener (`hns` / SharedAccess) |
+| add-rule | ok | `.test` -> `127.0.0.1` rule added successfully |
+| verify-rule | ok | added rule namespace and name server match expectation |
+| responder | skipped | port 53 occupied; responder not started |
+| resolve-via-nrpt | fail | no A record (expected without a local responder) |
+| resolve-direct | skipped | responder not running |
+| remove-rule | ok | temporary rule removed successfully |
+| restore-verify | pass | exactly 2 rules after, matching the snapshot |
+
+### Findings
+
+1. **NRPT add/remove/restore cycle works on Windows 11 Home.** The temporary `.test` rule was added and removed without affecting the two coexisting Tailscale MagicDNS rules.
+2. **Port-53 conflict detection works.** The spike reports the foreign listener and skips the responder rather than terminating it.
+3. **End-to-end `.test` resolution remains blocked on this machine** because the WSL2/`hns` relay owns UDP 53. Verification needs a clean image or explicit user consent to stop the conflicting service.
+
 ## Dimensional Status
 
 | Dimension | Status | Evidence required |
 |---|---|---|
-| NRPT on Windows 11 Home | Partially verified | Probe shows cmdlets and rules present; add/remove cycle pending, end-to-end resolution blocked on this machine by `hns` port-53 conflict |
+| NRPT add/remove cycle | Verified on Windows 11 Home | Elevated spike added and removed `.test` rule; original Tailscale rules restored exactly |
+| NRPT on Windows 11 Home | Partially verified | Cmdlets/rules present, add/remove cycle verified; end-to-end resolution blocked by `hns` port-53 conflict |
 | NRPT on Windows 10 Home | Not verified | Requires Windows 10 22H2 x64 test image |
 | NRPT on Windows 10 Pro | Not verified | Requires Windows 10 22H2 Pro test image |
-| VPN interaction | Preliminary | Tailscale MagicDNS rules coexist; must re-test with `.test` rule |
+| VPN interaction | Preliminary | Tailscale MagicDNS rules coexist with temporary `.test` rule; no collision observed |
 | Corporate DNS / Group Policy | Not verified | Requires managed-environment fixture |
 | Browser secure DNS | Policy direction set | Behavior test with Chrome/Edge/Firefox pending |
 | Sleep/resume | Not verified | Requires user-interactive resume and rule + responder active |
 | UDP and TCP `.test` resolution | Blocked on measurement machine | Requires a clean machine without `hns`/SharedAccess on port 53, or stopping the conflicting service with user consent |
-| Port 53 conflict detection | Verified | `hns`/SharedAccess owns UDP 53; Nerd must report, never terminate, foreign listeners |
+| Port 53 conflict detection | Verified | `hns`/SharedAccess owns UDP 53; spike reports and skips, never terminates, foreign listeners |
 
 ## OD-007 Minimum Windows 10 Build
 
@@ -78,7 +101,7 @@ Status: researching. The final claim is written to `compatibility.md` when a Win
 
 ## Next Steps
 
-1. Run `tests/windows/od006-nrpt-mutate.ps1` elevated to verify the add/probe/remove/restore cycle and port-conflict reporting. Requires explicit UAC approval. On this machine the responder phase will be skipped because `hns` owns UDP 53; end-to-end UDP/TCP `.test` resolution must run on a clean machine or after the conflicting service is stopped with consent.
+1. ~~Run `tests/windows/od006-nrpt-mutate.ps1` elevated to verify the add/probe/remove/restore cycle and port-conflict reporting.~~ Done. Add/remove/restore verified; port-conflict detection verified; responder/resolution blocked on this machine by `hns`. End-to-end UDP/TCP `.test` resolution must run on a clean machine or after the conflicting service is stopped with consent.
 2. Test sleep/resume with the rule and responder active on a machine where port 53 is free. Requires user interaction.
 3. Test browser secure DNS on/off for Chrome, Edge, and Firefox.
 4. Test on Windows 10 22H2 Home/Pro once an image is available.

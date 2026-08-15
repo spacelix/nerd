@@ -133,16 +133,20 @@ finally {
         New-Result "remove-rule" "ok" ("rule {0} removed" -f $ruleName)
     }
     $snapshotAfter = @(Get-DnsClientNrptRule | ForEach-Object { $_.Name } | Sort-Object)
-    $restored = (Compare-Object $snapshotBefore $snapshotAfter).Count -eq 0
+    $diff = Compare-Object $snapshotBefore $snapshotAfter
+    $restored = (-not $diff) -or ($diff.Count -eq 0)
     $restoreStatus = if ($restored) { "pass" } else { "fail" }
     New-Result "restore-verify" $restoreStatus ("{0} rules before, {1} rules after" -f $snapshotBefore.Count, $snapshotAfter.Count)
 }
 
-[PSCustomObject]@{
+$report = [PSCustomObject]@{
     GeneratedAt = (Get-Date).ToString("o")
     Machine     = $env:COMPUTERNAME
     User        = $env:USERNAME
     SpikeId     = $spikeId
     RuleName    = $ruleName
     Results     = $results
-} | ConvertTo-Json -Depth 5
+}
+$reportPath = Join-Path $env:TEMP "od006-mutate-latest.json"
+$report | ConvertTo-Json -Depth 5 | Out-File -LiteralPath $reportPath -Encoding utf8
+$report | ConvertTo-Json -Depth 5
