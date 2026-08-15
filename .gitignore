@@ -1,0 +1,8 @@
+/target/
+/memory.md
+*.pdb
+*.ilk
+*.db
+*.db-shm
+*.db-wal
+*.log

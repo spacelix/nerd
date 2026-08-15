@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nerd.local/schemas/ipc.schema.json",
+  "title": "Nerd IPC Protocol 1",
+  "oneOf": [
+    { "$ref": "#/$defs/requestEnvelope" },
+    { "$ref": "#/$defs/responseEnvelope" },
+    { "$ref": "#/$defs/eventEnvelope" }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "protocolVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "applicationVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "requestEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "request"],
+      "properties": {
+        "protocolVersion": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/uuid" },
+        "request": { "$ref": "#/$defs/request" }
+      }
+    },
+    "request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "handshake" },
+            "payload": { "$ref": "#/$defs/handshakeRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "status" },
+            "payload": { "$ref": "#/$defs/statusRequest" }
+          }
+        }
+      ]
+    },
+    "handshakeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clientKind",
+        "clientVersion",
+        "minimumProtocolVersion",
+        "maximumProtocolVersion"
+      ],
+      "properties": {
+        "clientKind": { "enum": ["cli", "desktop"] },
+        "clientVersion": { "$ref": "#/$defs/applicationVersion" },
+        "minimumProtocolVersion": { "$ref": "#/$defs/protocolVersion" },
+        "maximumProtocolVersion": { "$ref": "#/$defs/protocolVersion" }
+      }
+    },
+    "statusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "responseEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "response"],
+      "properties": {
+        "protocolVersion": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/uuid" },
+        "response": { "$ref": "#/$defs/response" }
+      }
+    },
+    "response": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "handshake" },
+            "payload": { "$ref": "#/$defs/handshakeResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "status" },
+            "payload": { "$ref": "#/$defs/statusResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "error" },
+            "payload": { "$ref": "#/$defs/errorResponse" }
+          }
+        }
+      ]
+    },
+    "handshakeResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["daemonInstanceId", "applicationVersion", "selectedProtocolVersion"],
+      "properties": {
+        "daemonInstanceId": { "$ref": "#/$defs/uuid" },
+        "applicationVersion": { "$ref": "#/$defs/applicationVersion" },
+        "selectedProtocolVersion": { "$ref": "#/$defs/protocolVersion" }
+      }
+    },
+    "statusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["daemon", "health", "paths"],
+      "properties": {
+        "daemon": { "$ref": "#/$defs/daemonIdentity" },
+        "health": { "$ref": "#/$defs/daemonHealth" },
+        "paths": { "$ref": "#/$defs/dataPaths" },
+        "resources": { "$ref": "#/$defs/processResources" }
+      }
+    },
+    "daemonIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instanceId",
+        "processId",
+        "applicationVersion",
+        "protocolVersion",
+        "uptimeMs"
+      ],
+      "properties": {
+        "instanceId": { "$ref": "#/$defs/uuid" },
+        "processId": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "applicationVersion": { "$ref": "#/$defs/applicationVersion" },
+        "protocolVersion": { "$ref": "#/$defs/protocolVersion" },
+        "uptimeMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "daemonHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "components"],
+      "properties": {
+        "status": { "$ref": "#/$defs/healthStatus" },
+        "components": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/healthComponent" }
+        }
+      }
+    },
+    "healthStatus": {
+      "enum": ["healthy", "degraded", "unhealthy"]
+    },
+    "healthComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "status"],
+      "properties": {
+        "component": { "enum": ["state", "logging", "ipc", "resources"] },
+        "status": { "$ref": "#/$defs/healthStatus" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "dataPaths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataDirectory", "databasePath", "logDirectory"],
+      "properties": {
+        "dataDirectory": { "type": "string", "minLength": 1 },
+        "databasePath": { "type": "string", "minLength": 1 },
+        "logDirectory": { "type": "string", "minLength": 1 }
+      }
+    },
+    "processResources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workingSetBytes", "peakWorkingSetBytes", "privateUsageBytes"],
+      "properties": {
+        "workingSetBytes": { "type": "integer", "minimum": 0 },
+        "peakWorkingSetBytes": { "type": "integer", "minimum": 0 },
+        "privateUsageBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "errorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "code": { "const": "protocol_mismatch" } },
+            "required": ["code"]
+          },
+          "then": {
+            "required": ["minimumProtocolVersion", "maximumProtocolVersion"]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["minimumProtocolVersion"] },
+                { "required": ["maximumProtocolVersion"] }
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "protocol_mismatch",
+            "handshake_required",
+            "invalid_request",
+            "daemon_unhealthy",
+            "shutting_down",
+            "internal"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "retryable": { "type": "boolean" },
+        "minimumProtocolVersion": { "$ref": "#/$defs/protocolVersion" },
+        "maximumProtocolVersion": { "$ref": "#/$defs/protocolVersion" }
+      }
+    },
+    "eventEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "operationId", "sequence", "event"],
+      "properties": {
+        "protocolVersion": { "$ref": "#/$defs/protocolVersion" },
+        "operationId": { "$ref": "#/$defs/uuid" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "event": { "$ref": "#/$defs/event" }
+      }
+    },
+    "event": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "progress" },
+            "payload": { "$ref": "#/$defs/progressEvent" }
+          }
+        }
+      ]
+    },
+    "progressEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "message", "cancellable"],
+      "properties": {
+        "stage": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "cancellable": { "type": "boolean" },
+        "completedUnits": { "type": "integer", "minimum": 0 },
+        "totalUnits": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

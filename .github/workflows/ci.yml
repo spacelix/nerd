@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify toolchain
+        shell: pwsh
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked --workspace --all-targets
+      - name: Build release binaries
+        run: cargo build --locked --workspace --release
+      - name: Check application versions
+        shell: pwsh
+        run: |
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $workspacePackages = @($metadata.packages.Where({ $metadata.workspace_members -contains $_.id }))
+          $versions = @($workspacePackages.version | Sort-Object -Unique)
+          if ($versions.Count -ne 1) {
+            throw "Workspace packages must inherit one canonical version: $($versions -join ', ')"
+          }
+          $nonInherited = @(Get-ChildItem .\crates -Filter Cargo.toml -Recurse | Where-Object {
+            -not (Select-String -LiteralPath $_.FullName -Pattern '^version\.workspace = true$' -Quiet)
+          })
+          if ($nonInherited.Count -ne 0) {
+            throw "Crates not inheriting the workspace version: $($nonInherited.FullName -join ', ')"
+          }
+          $expected = $versions[0]
+          $reported = @(
+            ((& .\target\release\nerd.exe --version) -replace '^nerd ', '')
+            ((& .\target\release\nerd-daemon.exe --version) -replace '^nerd-daemon ', '')
+            ((& .\target\release\nerd-helper.exe --version) -replace '^nerd-helper ', '')
+          )
+          if ($reported.Where({ $_ -ne $expected }).Count -ne 0) {
+            throw "Application version mismatch: expected $expected, reported $($reported -join ', ')"
+          }
+
+  dependencies:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version 0.20.2
+      - name: Check dependency policy
+        run: cargo deny check advisories bans licenses sources

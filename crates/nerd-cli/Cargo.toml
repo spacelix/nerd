@@ -1,0 +1,20 @@
+[package]
+name = "nerd-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "nerd"
+path = "src/main.rs"
+
+[dependencies]
+nerd-core = { path = "../nerd-core" }
+tokio.workspace = true
+uuid.workspace = true
+windows-sys.workspace = true
+
+[lints]
+workspace = true
