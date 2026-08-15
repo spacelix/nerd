@@ -49,6 +49,7 @@ release/1.0.0
 
 - Every post-bootstrap change reaches `main` through a pull request, including changes made by a sole maintainer.
 - Required `rust` and `dependencies` CI checks must pass before merge.
+- Documentation-only pull requests keep those required check contexts but complete them as lightweight no-op checks.
 - Resolve review conversations and inspect the complete branch diff before merge.
 - Required approval count may remain zero for a sole-maintainer repository, but the pull-request boundary is still mandatory.
 - Delete short-lived branches after merge.

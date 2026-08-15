@@ -9,25 +9,76 @@ permissions:
   contents: read
 
 jobs:
-  rust:
+  changes:
     runs-on: windows-latest
+    outputs:
+      full: ${{ steps.filter.outputs.full }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Detect implementation changes
+        shell: pwsh
+        run: |
+          $runFull = '${{ github.event_name }}' -eq 'workflow_dispatch'
+          if (-not $runFull) {
+            $base = '${{ github.event.pull_request.base.sha }}'
+            $head = '${{ github.event.pull_request.head.sha }}'
+            $paths = @(git diff --name-only "$base...$head")
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Failed to determine changed paths'
+            }
+            $patterns = @(
+              '^\.github/'
+              '^\.gitattributes$'
+              '^(apps|crates|schemas|scripts|tests)/'
+              '^(Cargo\.lock|Cargo\.toml|deny\.toml|package\.json|pnpm-lock\.yaml|rust-toolchain\.toml|rustfmt\.toml)$'
+            )
+            $runFull = $null -ne ($paths | Where-Object {
+              $path = $_
+              $patterns.Where({ $path -match $_ }, 'First').Count -ne 0
+            } | Select-Object -First 1)
+          }
+          "full=$($runFull.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  rust:
+    needs: changes
+    if: always()
+    runs-on: windows-latest
+    steps:
+      - name: Require change detection
+        shell: pwsh
+        run: |
+          if ('${{ needs.changes.result }}' -ne 'success') {
+            throw 'Change detection did not complete successfully'
+          }
+      - name: Accept documentation-only change
+        if: needs.changes.outputs.full != 'true'
+        run: Write-Host 'Rust checks are not required for documentation-only changes.'
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.full == 'true'
       - name: Verify toolchain
+        if: needs.changes.outputs.full == 'true'
         shell: pwsh
         run: |
           rustup show active-toolchain
           rustc --version
           cargo --version
       - name: Check formatting
+        if: needs.changes.outputs.full == 'true'
         run: cargo fmt --all -- --check
       - name: Lint
+        if: needs.changes.outputs.full == 'true'
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test
+        if: needs.changes.outputs.full == 'true'
         run: cargo test --locked --workspace --all-targets
       - name: Build release binaries
+        if: needs.changes.outputs.full == 'true'
         run: cargo build --locked --workspace --release
       - name: Check application versions
+        if: needs.changes.outputs.full == 'true'
         shell: pwsh
         run: |
           $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
@@ -53,10 +104,24 @@ jobs:
           }
 
   dependencies:
+    needs: changes
+    if: always()
     runs-on: windows-latest
     steps:
+      - name: Require change detection
+        shell: pwsh
+        run: |
+          if ('${{ needs.changes.result }}' -ne 'success') {
+            throw 'Change detection did not complete successfully'
+          }
+      - name: Accept documentation-only change
+        if: needs.changes.outputs.full != 'true'
+        run: Write-Host 'Dependency checks are not required for documentation-only changes.'
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.full == 'true'
       - name: Install cargo-deny
+        if: needs.changes.outputs.full == 'true'
         run: cargo install cargo-deny --locked --version 0.20.2
       - name: Check dependency policy
+        if: needs.changes.outputs.full == 'true'
         run: cargo deny check advisories bans licenses sources
