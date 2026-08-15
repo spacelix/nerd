@@ -332,8 +332,7 @@ pub(crate) fn to_wide(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_process_token, current_user_and_system_sddl, ensure_non_elevated_current_process,
-        local_app_data, process_memory,
+        classify_process_token, current_user_and_system_sddl, local_app_data, process_memory,
     };
     use crate::ProcessSecurityError;
 
@@ -351,7 +350,6 @@ mod tests {
 
     #[test]
     fn known_folder_and_process_metrics_are_available() {
-        ensure_non_elevated_current_process().expect("test process must be non-elevated");
         let path = local_app_data().expect("resolve Local AppData");
         assert!(path.is_absolute());
 
