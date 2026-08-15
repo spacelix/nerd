@@ -71,6 +71,23 @@ Produce a supported matrix for wildcard `.test` resolution through Windows NRPT 
 2. **Port-53 conflict detection works.** The spike reports the foreign listener and skips the responder rather than terminating it.
 3. **End-to-end `.test` resolution remains blocked on this machine** because the WSL2/`hns` relay owns UDP 53. Verification needs a clean image or explicit user consent to stop the conflicting service.
 
+## Browser Secure DNS
+
+`tests/windows/od006-browser-secure-dns.ps1` is non-elevated and read-only. It inspects Chrome/Edge secure DNS preferences and Firefox `network.trr.mode` to infer whether browser DoH would bypass NRPT for `.test`.
+
+### Measured Browser State
+
+| Browser | Setting | Value | Inference |
+|---|---|---|---|
+| Chrome | SecureDnsMode | not configured | Profile not present |
+| Edge | SecureDnsMode | not configured | Profile not present |
+| Brave | SecureDnsMode | not configured | Secure DNS off; NRPT applies |
+| Firefox | network.trr.mode | not installed | N/A |
+
+### Finding
+
+On this machine, Brave is installed and its secure DNS setting is off. Chrome and Edge profiles are not present. No measured browser is configured to use its own DoH resolver, so `.test` queries from Brave travel through the Windows DNS client and NRPT. If a user later enables browser secure DNS, those queries will bypass NRPT and likely fail for `.test`. Nerd's planned behavior remains: detect the enabled-browser-DoH condition and report a diagnostic; never reconfigure browser policy.
+
 ## Dimensional Status
 
 | Dimension | Status | Evidence required |
@@ -81,7 +98,7 @@ Produce a supported matrix for wildcard `.test` resolution through Windows NRPT 
 | NRPT on Windows 10 Pro | Not verified | Requires Windows 10 22H2 Pro test image |
 | VPN interaction | Preliminary | Tailscale MagicDNS rules coexist with temporary `.test` rule; no collision observed |
 | Corporate DNS / Group Policy | Not verified | Requires managed-environment fixture |
-| Browser secure DNS | Policy direction set | Behavior test with Chrome/Edge/Firefox pending |
+| Browser secure DNS | Verified off on measured machine | Chrome/Edge not configured; Firefox not installed; NRPT applies today. Re-test if user enables browser DoH |
 | Sleep/resume | Not verified | Requires user-interactive resume and rule + responder active |
 | UDP and TCP `.test` resolution | Blocked on measurement machine | Requires a clean machine without `hns`/SharedAccess on port 53, or stopping the conflicting service with user consent |
 | Port 53 conflict detection | Verified | `hns`/SharedAccess owns UDP 53; spike reports and skips, never terminates, foreign listeners |
@@ -103,7 +120,7 @@ Status: researching. The final claim is written to `compatibility.md` when a Win
 
 1. ~~Run `tests/windows/od006-nrpt-mutate.ps1` elevated to verify the add/probe/remove/restore cycle and port-conflict reporting.~~ Done. Add/remove/restore verified; port-conflict detection verified; responder/resolution blocked on this machine by `hns`. End-to-end UDP/TCP `.test` resolution must run on a clean machine or after the conflicting service is stopped with consent.
 2. Test sleep/resume with the rule and responder active on a machine where port 53 is free. Requires user interaction.
-3. Test browser secure DNS on/off for Chrome, Edge, and Firefox.
+3. ~~Test browser secure DNS on/off for Chrome, Edge, and Firefox.~~ Done for off-state on this machine; re-test when browser DoH is enabled.
 4. Test on Windows 10 22H2 Home/Pro once an image is available.
 5. Record VPN (Tailscale, plus a corporate VPN if available) interaction.
 6. Decide whether Nerd should detect and warn when WSL2/`hns` occupies port 53, and record that in the Feature 02 spec.
