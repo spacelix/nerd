@@ -86,6 +86,37 @@ if ($edgeTemplates) {
     Add-Result -Browser "Edge" -Setting "SecureDnsTemplates" -Value ($edgeTemplates -join "; ") -Inference "DoH provider list"
 }
 
+# Brave: Chromium-based, same preference shape.
+$bravePrefs = $null
+$bravePaths = @(
+    Join-Path $env:LOCALAPPDATA "BraveSoftware\Brave-Browser\User Data\Default\Secure Preferences"
+    Join-Path $env:LOCALAPPDATA "BraveSoftware\Brave-Browser\User Data\Local State"
+)
+foreach ($path in $bravePaths) {
+    if (Test-Path $path) {
+        try {
+            $bravePrefs = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -ErrorAction SilentlyContinue
+            break
+        }
+        catch {
+            $bravePrefs = $null
+        }
+    }
+}
+
+$braveMode = Get-OptionalProperty (Get-OptionalProperty $bravePrefs "dns_over_https") "mode" "not configured"
+$braveTemplates = Get-OptionalProperty (Get-OptionalProperty $bravePrefs "dns_over_https") "templates" ""
+$braveInference = switch ($braveMode) {
+    "off"          { "NRPT applies; Windows DNS client resolves .test" }
+    "automatic"    { "Browser may upgrade to known DoH providers; .test could bypass NRPT" }
+    "secure"       { "Browser forces DoH to configured provider; .test bypasses NRPT" }
+    default        { "Assuming Windows DNS client; verify manually" }
+}
+Add-Result -Browser "Brave" -Setting "SecureDnsMode" -Value $braveMode -Inference $braveInference
+if ($braveTemplates) {
+    Add-Result -Browser "Brave" -Setting "SecureDnsTemplates" -Value ($braveTemplates -join "; ") -Inference "DoH provider list"
+}
+
 # Firefox: network.trr.mode in profiles.ini / prefs.js.
 $firefoxResult = "not installed or no profile found"
 $firefoxProfileDir = Join-Path $env:APPDATA "Mozilla\Firefox\Profiles"
