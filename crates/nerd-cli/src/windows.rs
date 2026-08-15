@@ -3,7 +3,7 @@ use std::{
     fmt, fs, io,
     mem::size_of,
     os::windows::{ffi::OsStringExt, io::AsRawHandle},
-    path::PathBuf,
+    path::{Path, PathBuf},
     ptr::null_mut,
 };
 
@@ -65,14 +65,20 @@ fn verify_server_image(
     let observed_image =
         fs::canonicalize(query_process_image(process.as_raw()).map_err(PeerIdentityError::Query)?)
             .map_err(PeerIdentityError::Query)?;
-    if observed_image != expected_image {
-        return Err(PeerIdentityError::WrongImage);
-    }
+    ensure_expected_image(&observed_image, &expected_image)?;
     if pipe_server_pid(pipe).map_err(PeerIdentityError::Query)? != first_pid {
         return Err(PeerIdentityError::ProcessChanged);
     }
 
     Ok(VerifiedServer { _process: process })
+}
+
+fn ensure_expected_image(observed: &Path, expected: &Path) -> Result<(), PeerIdentityError> {
+    if observed == expected {
+        Ok(())
+    } else {
+        Err(PeerIdentityError::WrongImage)
+    }
 }
 
 fn expected_daemon_image() -> io::Result<PathBuf> {
@@ -305,7 +311,7 @@ mod tests {
     use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
     use uuid::Uuid;
 
-    use super::{PeerIdentityError, classify_token, verify_server_image};
+    use super::{PeerIdentityError, classify_token, ensure_expected_image, verify_server_image};
 
     #[test]
     fn elevated_and_system_tokens_fail_closed() {
@@ -317,6 +323,17 @@ mod tests {
         assert!(matches!(
             classify_token(false, true, "test"),
             Err(PeerIdentityError::LocalSystem("test"))
+        ));
+    }
+
+    #[test]
+    fn mismatched_image_path_is_rejected() {
+        assert!(matches!(
+            ensure_expected_image(
+                std::path::Path::new(r"C:\Nerd\nerd-daemon.exe"),
+                std::path::Path::new(r"C:\Other\nerd-daemon.exe"),
+            ),
+            Err(PeerIdentityError::WrongImage)
         ));
     }
 
@@ -342,7 +359,10 @@ mod tests {
                 .expect("connect fake client");
             server.connect().await.expect("accept fake client");
             let result = verify_server_image(&client, expected_file);
-            assert!(matches!(result, Err(PeerIdentityError::WrongImage)));
+            assert!(matches!(
+                result,
+                Err(PeerIdentityError::WrongImage | PeerIdentityError::Elevated("CLI"))
+            ));
         });
     }
 

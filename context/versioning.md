@@ -9,6 +9,8 @@ Nerd uses Git as the source-code versioning system with a trunk-based workflow.
 - `main` is the single long-lived branch and must remain releasable.
 - Work happens on short-lived branches created from current `main`.
 - No permanent `develop` branch.
+- After the initial repository bootstrap, do not commit or push directly to `main`.
+- Push work branches to the remote and integrate them through pull requests; pushing a branch does not publish a release.
 - Rebase or update a branch before merge according to repository policy; never rewrite shared history without explicit coordination.
 
 Preferred branch names:
@@ -45,10 +47,17 @@ release/1.0.0
 
 ### Integration
 
-- Changes reach `main` through reviewed pull requests unless repository governance explicitly allows direct commits.
+- Every post-bootstrap change reaches `main` through a pull request, including changes made by a sole maintainer.
+- Required `rust` and `dependencies` CI checks must pass before merge.
+- Resolve review conversations and inspect the complete branch diff before merge.
+- Required approval count may remain zero for a sole-maintainer repository, but the pull-request boundary is still mandatory.
+- Delete short-lived branches after merge.
+- Direct changes to `main` are break-glass recovery only and require an explicitly documented governance decision.
 - Required formatting, linting, tests, security checks, and resource gates pass before merge.
 - Merge strategy should preserve useful Conventional Commit history or produce a compliant squash commit.
 - Release commits contain release metadata only; feature work does not hide inside release commits.
+
+Repository settings must protect `main` by requiring pull requests and the required CI checks, blocking force pushes and deletion, and requiring conversation resolution. If the hosting plan cannot enforce a rule, the limitation is documented and the same rule remains mandatory by process.
 
 ### Tags
 
