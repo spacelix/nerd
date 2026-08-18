@@ -12,10 +12,11 @@ use windows_sys::Win32::{
     Foundation::LocalFree,
     Security::Cryptography::{
         CERT_CLOSE_STORE_FORCE_FLAG, CERT_CONTEXT, CERT_FIND_SHA1_HASH, CERT_SHA1_HASH_PROP_ID,
-        CERT_STORE_ADD_REPLACE_EXISTING, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+        CERT_STORE_ADD_REPLACE_EXISTING, CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN,
         CertAddEncodedCertificateToStore, CertCloseStore, CertCreateCertificateContext,
-        CertDeleteCertificateFromStore, CertFindCertificateInStore, CertGetCertificateContextProperty,
-        CertOpenSystemStoreW, CryptProtectData, CryptUnprotectData,
+        CertDeleteCertificateFromStore, CertFindCertificateInStore,
+        CertGetCertificateContextProperty, CertOpenSystemStoreW, CryptProtectData,
+        CryptUnprotectData,
     },
 };
 
@@ -43,7 +44,9 @@ impl fmt::Display for CertError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Rcgen(_) => formatter.write_str("certificate generation failed"),
-            Self::Windows(_) => formatter.write_str("Windows certificate or DPAPI operation failed"),
+            Self::Windows(_) => {
+                formatter.write_str("Windows certificate or DPAPI operation failed")
+            }
             Self::NotInStore => formatter.write_str("CA certificate is not in the trust store"),
             Self::StoreCorrupt => formatter.write_str("trust store returned an unexpected shape"),
         }
@@ -93,10 +96,7 @@ pub fn generate_ca() -> Result<CaMaterial, CertError> {
     })
 }
 
-pub fn issue_leaf(
-    sans: &[String],
-    ca_key_pem: &str,
-) -> Result<(String, String), CertError> {
+pub fn issue_leaf(sans: &[String], ca_key_pem: &str) -> Result<(String, String), CertError> {
     let ca_key = KeyPair::from_pem(ca_key_pem)?;
     let mut issuer_params = CertificateParams::new(Vec::<String>::new())?;
     issuer_params
@@ -222,16 +222,20 @@ fn find_by_thumbprint(
 /// certificate API, avoiding a separate hash dependency.
 fn fingerprint_hex(cert_der: &[u8]) -> Result<String, CertError> {
     // SAFETY: `cert_der` is valid for the length passed and the encoding flags are constants.
-    let context = unsafe {
-        CertCreateCertificateContext(ENCODING, cert_der.as_ptr(), cert_der.len() as u32)
-    };
+    let context =
+        unsafe { CertCreateCertificateContext(ENCODING, cert_der.as_ptr(), cert_der.len() as u32) };
     if context.is_null() {
         return Err(CertError::Windows(std::io::Error::last_os_error()));
     }
     let mut required = 0u32;
     // SAFETY: null data with zero length is the documented size-query call.
     let size_query = unsafe {
-        CertGetCertificateContextProperty(context, CERT_SHA1_HASH_PROP_ID, null_mut(), &mut required)
+        CertGetCertificateContextProperty(
+            context,
+            CERT_SHA1_HASH_PROP_ID,
+            null_mut(),
+            &mut required,
+        )
     };
     if size_query == 0 || required == 0 {
         // SAFETY: the context was created above and must be freed exactly once.
@@ -343,7 +347,7 @@ fn hex_from_bytes(bytes: &[u8]) -> String {
 }
 
 fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return None;
     }
     (0..hex.len())
@@ -354,7 +358,7 @@ fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{generate_ca, hex_from_bytes, hex_to_bytes, issue_leaf, unprotect, protect};
+    use super::{generate_ca, hex_from_bytes, hex_to_bytes, issue_leaf, protect, unprotect};
 
     #[test]
     fn hex_round_trip_is_correct() {
@@ -377,10 +381,9 @@ mod tests {
         let restored = unprotect(&protected).expect("unprotect key");
         assert_eq!(restored, ca.key_pem.as_bytes());
 
-        let (leaf, leaf_key) = issue_leaf(&["foo.test".to_owned()], &ca.key_pem)
-            .expect("issue leaf");
+        let (leaf, leaf_key) =
+            issue_leaf(&["foo.test".to_owned()], &ca.key_pem).expect("issue leaf");
         assert!(leaf.contains("BEGIN CERTIFICATE"));
         assert!(leaf_key.contains("BEGIN PRIVATE KEY"));
     }
 }
-

@@ -76,9 +76,12 @@ fn run_network(action: NetworkAction) -> Result<(), CliError> {
                 Request::NetworkStatus(NetworkStatusRequest {}),
             ),
         };
-        let response = timeout(REQUEST_TIMEOUT, exchange_network(&mut connection.client, request))
-            .await
-            .map_err(|_| CliError::Timeout)??;
+        let response = timeout(
+            REQUEST_TIMEOUT,
+            exchange_network(&mut connection.client, request),
+        )
+        .await
+        .map_err(|_| CliError::Timeout)??;
         print_network(&response);
         Ok(())
     })

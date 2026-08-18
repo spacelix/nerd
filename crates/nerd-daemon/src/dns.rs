@@ -106,8 +106,9 @@ fn build_catalog() -> Result<Catalog, String> {
     wildcard_a.add_rdata(RData::A(A(Ipv4Addr::new(127, 0, 0, 1))));
     records.insert(RrKey::new(wildcard.into(), RecordType::A), wildcard_a);
 
-    let zone: InMemoryZoneHandler = InMemoryZoneHandler::new(origin.clone(), records, ZoneType::Primary, AxfrPolicy::Deny)
-        .map_err(|error| error.to_string())?;
+    let zone: InMemoryZoneHandler =
+        InMemoryZoneHandler::new(origin.clone(), records, ZoneType::Primary, AxfrPolicy::Deny)
+            .map_err(|error| error.to_string())?;
     let mut catalog = Catalog::new();
     catalog.upsert(origin.into(), vec![Arc::new(zone)]);
     Ok(catalog)
@@ -123,10 +124,20 @@ pub fn probe_port(port: u16, protocol: &str) -> Result<Option<PortConflict>, std
         "tcp" => format!(
             "$p = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess; if ($p) {{ $p }}; exit 0"
         ),
-        other => return Err(std::io::Error::other(format!("unsupported protocol '{other}'"))),
+        other => {
+            return Err(std::io::Error::other(format!(
+                "unsupported protocol '{other}'"
+            )));
+        }
     };
     let output = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
         .output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -145,7 +156,13 @@ pub fn probe_port(port: u16, protocol: &str) -> Result<Option<PortConflict>, std
 
 #[cfg(test)]
 mod tests {
-    use super::{build_catalog, probe_port};
+    use std::net::{SocketAddr, ToSocketAddrs};
+
+    use super::{build_catalog, probe_port, start};
+    use hickory_server::proto::{
+        op::{Message, MessageType, OpCode, Query},
+        rr::{Name, RecordType},
+    };
 
     #[test]
     fn unsupported_protocol_is_rejected() {
@@ -159,5 +176,60 @@ mod tests {
         let catalog = build_catalog().expect("build catalog");
         let name = LowerName::from(Name::from_str("test.").unwrap());
         assert!(catalog.contains(&name));
+    }
+
+    #[test]
+    fn dns_server_resolves_test_names_over_udp() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime");
+        runtime.block_on(async {
+            let addr = free_loopback_port();
+            let handle = start(addr).await.expect("start DNS server");
+
+            let mut query = Message::new(0, MessageType::Query, OpCode::Query);
+            query.add_query(Query::query(
+                Name::from_ascii("foo.test.").expect("valid name"),
+                RecordType::A,
+            ));
+            let bytes = query.to_vec().expect("encode query");
+
+            let socket = tokio::net::UdpSocket::bind("127.0.0.1:0")
+                .await
+                .expect("bind client");
+            socket.send_to(&bytes, addr).await.expect("send query");
+            let mut buffer = [0u8; 512];
+            let (len, _) = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                socket.recv_from(&mut buffer),
+            )
+            .await
+            .expect("response timeout")
+            .expect("recv response");
+
+            let response = Message::from_vec(&buffer[..len]).expect("parse response");
+            use hickory_server::proto::rr::{RData, rdata::A};
+            assert!(
+                response.answers.iter().any(|record| {
+                    record.record_type() == RecordType::A
+                        && matches!(record.data, RData::A(A(ip)) if ip.to_string() == "127.0.0.1")
+                }),
+                "expected A record 127.0.0.1, got {:?}",
+                response.answers
+            );
+            handle.stop();
+        });
+    }
+
+    fn free_loopback_port() -> SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind for free port");
+        let port = listener.local_addr().expect("local addr").port();
+        drop(listener);
+        ("127.0.0.1", port)
+            .to_socket_addrs()
+            .expect("resolve addr")
+            .next()
+            .expect("socket addr")
     }
 }

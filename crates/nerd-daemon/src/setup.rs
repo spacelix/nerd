@@ -13,12 +13,13 @@ use std::{
 
 use nerd_core::{
     ipc::{
-        NetworkRepairResponse, NetworkSetupResponse, NetworkStatusResponse, NetworkUninstallResponse,
-        PortConflict,
+        NetworkRepairResponse, NetworkSetupResponse, NetworkStatusResponse,
+        NetworkUninstallResponse, PortConflict,
     },
     setup::{
-        HelperOperation, HelperPlan, HelperResult, JournalEntry, NrptAddParams, NrptRemoveParams,
-        NRPT_DISPLAY_NAME, NRPT_NAMESERVER, NRPT_NAMESPACE, PLAN_VERSION, nerd_rule_comment,
+        HelperOperation, HelperPlan, HelperResult, JournalEntry, NRPT_DISPLAY_NAME,
+        NRPT_NAMESERVER, NRPT_NAMESPACE, NrptAddParams, NrptRemoveParams, PLAN_VERSION,
+        nerd_rule_comment,
     },
 };
 use uuid::Uuid;
@@ -33,7 +34,7 @@ use windows_sys::Win32::{
 
 use crate::{
     cert::{self, CertError},
-    dns::{self, DnsServerHandle, DnsError, PortConflict as DnsPortConflict},
+    dns::{self, DnsError, DnsServerHandle, PortConflict as DnsPortConflict},
     paths::AppPaths,
     windows,
 };
@@ -102,22 +103,12 @@ impl From<std::io::Error> for SetupError {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NetworkState {
     rule_name: Option<String>,
     ca_fingerprint: Option<String>,
     ca_key_protected: bool,
-}
-
-impl Default for NetworkState {
-    fn default() -> Self {
-        Self {
-            rule_name: None,
-            ca_fingerprint: None,
-            ca_key_protected: false,
-        }
-    }
 }
 
 /// Shared network runtime state; the DNS server handle lives here so the daemon
@@ -261,13 +252,17 @@ impl NetworkSetup {
                     let _ = self.rollback_ca(&operation_id);
                     rolled_back = true;
                 }
-                if created_rule
-                    && let Some(name) = &rule_name
-                {
+                if created_rule && let Some(name) = &rule_name {
                     let _ = self.remove_rule_elevated(&operation_id, name);
                     rolled_back = true;
                 }
-                self.append_journal(&operation_id, "daemon", "setup", "failed", &error.to_string())?;
+                self.append_journal(
+                    &operation_id,
+                    "daemon",
+                    "setup",
+                    "failed",
+                    &error.to_string(),
+                )?;
                 if rolled_back {
                     self.append_journal(&operation_id, "daemon", "rollback", "ok", "complete")?;
                 }
@@ -292,10 +287,10 @@ impl NetworkSetup {
             removed_rule = self.remove_rule_elevated(&operation_id, rule_name)?;
         }
         let removed_ca = self.rollback_ca(&operation_id)?;
-        if let Ok(mut guard) = self.runtime.dns.lock() {
-            if let Some(handle) = guard.take() {
-                handle.stop();
-            }
+        if let Ok(mut guard) = self.runtime.dns.lock()
+            && let Some(handle) = guard.take()
+        {
+            handle.stop();
         }
         let preserved_unrelated_rules = self.count_unrelated_rules()?;
         let _ = std::fs::remove_file(self.network_state_path());
@@ -349,7 +344,8 @@ impl NetworkSetup {
                 let actual = cert_fingerprint(&der)?;
                 if *expected != actual {
                     return Err(SetupError::State(
-                        "CA fingerprint does not match Nerd ownership record; refusing to install".to_owned(),
+                        "CA fingerprint does not match Nerd ownership record; refusing to install"
+                            .to_owned(),
                     ));
                 }
                 cert::install_ca_to_store(&der)?;
@@ -435,9 +431,7 @@ impl NetworkSetup {
             let ca_der = std::fs::read(&der_path)?;
             let actual = cert_fingerprint(&ca_der)?;
             match &state.ca_fingerprint {
-                Some(expected) if *expected == actual => {
-                    cert::remove_ca_from_store(&ca_der)?
-                }
+                Some(expected) if *expected == actual => cert::remove_ca_from_store(&ca_der)?,
                 _ => {
                     self.append_journal(
                         operation_id,
@@ -488,7 +482,11 @@ impl NetworkSetup {
         Ok(text.trim().parse::<u32>().unwrap_or(0))
     }
 
-    fn remove_rule_elevated(&self, operation_id: &Uuid, rule_name: &str) -> Result<bool, SetupError> {
+    fn remove_rule_elevated(
+        &self,
+        operation_id: &Uuid,
+        rule_name: &str,
+    ) -> Result<bool, SetupError> {
         let plan = HelperPlan {
             plan_version: PLAN_VERSION,
             operation_id: *operation_id,
@@ -666,7 +664,11 @@ fn convert_conflict(conflict: DnsPortConflict) -> PortConflict {
 fn cert_fingerprint(cert_der: &[u8]) -> Result<String, CertError> {
     // Recompute the fingerprint with the same Windows API used at generation.
     let context = unsafe {
-        windows_sys::Win32::Security::Cryptography::CertCreateCertificateContext(0x1 | 0x10000, cert_der.as_ptr(), cert_der.len() as u32)
+        windows_sys::Win32::Security::Cryptography::CertCreateCertificateContext(
+            0x1 | 0x10000,
+            cert_der.as_ptr(),
+            cert_der.len() as u32,
+        )
     };
     if context.is_null() {
         return Err(CertError::Windows(std::io::Error::last_os_error()));
@@ -709,7 +711,10 @@ fn helper_executable() -> Result<String, SetupError> {
     let directory = current
         .parent()
         .ok_or_else(|| SetupError::State("cannot resolve helper directory".to_owned()))?;
-    Ok(directory.join("nerd-helper.exe").to_string_lossy().into_owned())
+    Ok(directory
+        .join("nerd-helper.exe")
+        .to_string_lossy()
+        .into_owned())
 }
 
 fn result_path_for(plan_path: &Path) -> PathBuf {

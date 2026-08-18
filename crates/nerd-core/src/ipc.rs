@@ -271,7 +271,7 @@ fn nonnegative_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: de::Deserializer<'de>,
 {
-    Ok(u32::deserialize(deserializer)?)
+    u32::deserialize(deserializer)
 }
 
 fn optional_port_conflict<'de, D>(deserializer: D) -> Result<Option<PortConflict>, D::Error>

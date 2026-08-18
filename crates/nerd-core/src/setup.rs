@@ -159,7 +159,7 @@ where
 mod tests {
     use uuid::Uuid;
 
-    use super::{HelperPlan, HelperOperation, NrptAddParams, NRPT_NAMESERVER, NRPT_NAMESPACE};
+    use super::{HelperOperation, HelperPlan, NRPT_NAMESERVER, NRPT_NAMESPACE, NrptAddParams};
 
     #[test]
     fn helper_plan_round_trips_through_json() {

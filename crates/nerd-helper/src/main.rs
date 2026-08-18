@@ -1,7 +1,7 @@
 use nerd_core::setup::{
-    HelperOperation, HelperPlan, HelperResult, HelperStepResult, JournalEntry, NrptAddParams,
-    NrptRemoveParams, NRPT_DISPLAY_NAME, NRPT_NAMESERVER, NRPT_NAMESPACE, PLAN_VERSION,
-    HELPER_EXIT_INVALID_PLAN, HELPER_EXIT_OK, HELPER_EXIT_OPERATION_FAILED,
+    HELPER_EXIT_INVALID_PLAN, HELPER_EXIT_OK, HELPER_EXIT_OPERATION_FAILED, HelperOperation,
+    HelperPlan, HelperResult, HelperStepResult, JournalEntry, NRPT_DISPLAY_NAME, NRPT_NAMESERVER,
+    NRPT_NAMESPACE, NrptAddParams, NrptRemoveParams, PLAN_VERSION,
 };
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -63,8 +63,8 @@ fn read_plan(path: &Path) -> Result<HelperPlan, String> {
     if text.len() > 64 * 1024 {
         return Err("plan file exceeds 64 KiB".to_owned());
     }
-    let plan: HelperPlan = serde_json::from_str(&text)
-        .map_err(|error| format!("plan JSON is invalid: {error}"))?;
+    let plan: HelperPlan =
+        serde_json::from_str(&text).map_err(|error| format!("plan JSON is invalid: {error}"))?;
     if plan.plan_version != PLAN_VERSION {
         return Err(format!("unsupported plan version {}", plan.plan_version));
     }
@@ -77,8 +77,8 @@ fn read_plan(path: &Path) -> Result<HelperPlan, String> {
 }
 
 fn validate_journal_path(journal_path: &str) -> Result<(), String> {
-    let local_app_data = std::env::var("LOCALAPPDATA")
-        .map_err(|_| "LOCALAPPDATA is not set".to_owned())?;
+    let local_app_data =
+        std::env::var("LOCALAPPDATA").map_err(|_| "LOCALAPPDATA is not set".to_owned())?;
     let allowed_root = std::path::Path::new(&local_app_data)
         .join("Nerd")
         .canonicalize()
@@ -150,10 +150,7 @@ fn is_guid(value: &str) -> bool {
 
 fn strip_guid_braces(value: &str) -> &str {
     let trimmed = value.trim();
-    if trimmed.len() >= 2
-        && trimmed.starts_with('{')
-        && trimmed.ends_with('}')
-    {
+    if trimmed.len() >= 2 && trimmed.starts_with('{') && trimmed.ends_with('}') {
         &trimmed[1..trimmed.len() - 1]
     } else {
         trimmed
@@ -166,12 +163,8 @@ fn execute(plan: &HelperPlan, result_path: &Path) -> Result<i32, String> {
 
     for operation in &plan.operations {
         let (name, step) = match operation {
-            HelperOperation::NrptAdd(params) => {
-                ("nrpt_add", execute_add(plan, params))
-            }
-            HelperOperation::NrptRemove(params) => {
-                ("nrpt_remove", execute_remove(plan, params))
-            }
+            HelperOperation::NrptAdd(params) => ("nrpt_add", execute_add(plan, params)),
+            HelperOperation::NrptRemove(params) => ("nrpt_remove", execute_remove(plan, params)),
         };
         match step {
             Ok(step) => steps.push(step),
@@ -202,13 +195,7 @@ fn execute(plan: &HelperPlan, result_path: &Path) -> Result<i32, String> {
 }
 
 fn execute_add(plan: &HelperPlan, params: &NrptAddParams) -> Result<HelperStepResult, String> {
-    append_journal(
-        plan,
-        "helper",
-        "nrpt_add",
-        "started",
-        &params.namespace,
-    )?;
+    append_journal(plan, "helper", "nrpt_add", "started", &params.namespace)?;
 
     let script = format!(
         "$r = Add-DnsClientNrptRule -Namespace '{ns}' -NameServers '{server}' -DisplayName '{display}' -Comment '{comment}' -PassThru; if ($r) {{ $r.Name }}",
@@ -221,7 +208,13 @@ fn execute_add(plan: &HelperPlan, params: &NrptAddParams) -> Result<HelperStepRe
 
     let rule_name = output.trim().to_owned();
     if !is_guid(&rule_name) {
-        append_journal(plan, "helper", "nrpt_add", "failed", "rule name not returned")?;
+        append_journal(
+            plan,
+            "helper",
+            "nrpt_add",
+            "failed",
+            "rule name not returned",
+        )?;
         return Err("Add-DnsClientNrptRule did not return a rule name".to_owned());
     }
 
@@ -229,17 +222,17 @@ fn execute_add(plan: &HelperPlan, params: &NrptAddParams) -> Result<HelperStepRe
         "$r = Get-DnsClientNrptRule -Name '{rule_name}' -ErrorAction SilentlyContinue; if ($r) {{ 'present' }} else {{ 'missing' }}"
     ))?;
     if !verify.contains("present") {
-        append_journal(plan, "helper", "nrpt_add", "failed", "postcondition missing")?;
+        append_journal(
+            plan,
+            "helper",
+            "nrpt_add",
+            "failed",
+            "postcondition missing",
+        )?;
         return Err("added NRPT rule failed postcondition verification".to_owned());
     }
 
-    append_journal(
-        plan,
-        "helper",
-        "nrpt_add",
-        "ok",
-        &rule_name,
-    )?;
+    append_journal(plan, "helper", "nrpt_add", "ok", &rule_name)?;
     Ok(HelperStepResult {
         operation: "nrpt_add".to_owned(),
         status: "ok".to_owned(),
@@ -248,15 +241,12 @@ fn execute_add(plan: &HelperPlan, params: &NrptAddParams) -> Result<HelperStepRe
     })
 }
 
-fn execute_remove(plan: &HelperPlan, params: &NrptRemoveParams) -> Result<HelperStepResult, String> {
+fn execute_remove(
+    plan: &HelperPlan,
+    params: &NrptRemoveParams,
+) -> Result<HelperStepResult, String> {
     let rule_name = strip_guid_braces(&params.rule_name).to_owned();
-    append_journal(
-        plan,
-        "helper",
-        "nrpt_remove",
-        "started",
-        &rule_name,
-    )?;
+    append_journal(plan, "helper", "nrpt_remove", "started", &rule_name)?;
 
     let owned = run_powershell(&format!(
         "$r = Get-DnsClientNrptRule -Name '{name}' -ErrorAction SilentlyContinue; if ($r -and ($r.Comment -like 'nerd-*') -and ($r.Namespace -contains '.test')) {{ 'owned' }} else {{ 'not-owned' }}",
@@ -304,13 +294,7 @@ fn execute_remove(plan: &HelperPlan, params: &NrptRemoveParams) -> Result<Helper
         return Err("removed NRPT rule failed postcondition verification".to_owned());
     }
 
-    append_journal(
-        plan,
-        "helper",
-        "nrpt_remove",
-        "ok",
-        &params.rule_name,
-    )?;
+    append_journal(plan, "helper", "nrpt_remove", "ok", &params.rule_name)?;
     Ok(HelperStepResult {
         operation: "nrpt_remove".to_owned(),
         status: "ok".to_owned(),
@@ -321,7 +305,13 @@ fn execute_remove(plan: &HelperPlan, params: &NrptRemoveParams) -> Result<Helper
 
 fn run_powershell(script: &str) -> Result<String, String> {
     let output = Command::new("powershell.exe")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
         .output()
         .map_err(|error| format!("failed to launch powershell.exe: {error}"))?;
     if !output.status.success() {
@@ -359,8 +349,7 @@ fn append_journal(
     };
     let line = serde_json::to_string(&entry)
         .map_err(|error| format!("journal entry serialization failed: {error}"))?;
-    writeln!(file, "{line}")
-        .map_err(|error| format!("journal write failed: {error}"))?;
+    writeln!(file, "{line}").map_err(|error| format!("journal write failed: {error}"))?;
     Ok(())
 }
 
