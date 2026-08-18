@@ -20,6 +20,10 @@ pub struct RequestEnvelope {
 pub enum Request {
     Handshake(HandshakeRequest),
     Status(StatusRequest),
+    NetworkSetup(NetworkSetupRequest),
+    NetworkUninstall(NetworkUninstallRequest),
+    NetworkRepair(NetworkRepairRequest),
+    NetworkStatus(NetworkStatusRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -64,6 +68,10 @@ pub struct ResponseEnvelope {
 pub enum Response {
     Handshake(HandshakeResponse),
     Status(StatusResponse),
+    NetworkSetup(NetworkSetupResponse),
+    NetworkUninstall(NetworkUninstallResponse),
+    NetworkRepair(NetworkRepairResponse),
+    NetworkStatus(NetworkStatusResponse),
     Error(ErrorResponse),
 }
 
@@ -155,6 +163,122 @@ pub struct ProcessResources {
     pub working_set_bytes: u64,
     pub peak_working_set_bytes: u64,
     pub private_usage_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkSetupRequest {}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NetworkSetupResponse {
+    pub success: bool,
+    pub rolled_back: bool,
+    #[serde(
+        default,
+        deserialize_with = "optional_message",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub nrpt_rule_name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "optional_message",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ca_fingerprint: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkUninstallRequest {}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NetworkUninstallResponse {
+    pub success: bool,
+    pub removed_nrpt_rule: bool,
+    pub removed_ca: bool,
+    #[serde(deserialize_with = "nonnegative_u32")]
+    pub preserved_unrelated_rules: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkRepairRequest {}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NetworkRepairResponse {
+    pub success: bool,
+    #[serde(deserialize_with = "nonempty_string")]
+    pub action: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkStatusRequest {}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NetworkStatusResponse {
+    pub dns_listener_active: bool,
+    pub nrpt_rule_present: bool,
+    pub ca_present: bool,
+    #[serde(
+        default,
+        deserialize_with = "optional_port_conflict",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub port_53_conflict: Option<PortConflict>,
+    #[serde(
+        default,
+        deserialize_with = "optional_port_conflict",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub port_80_conflict: Option<PortConflict>,
+    #[serde(
+        default,
+        deserialize_with = "optional_port_conflict",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub port_443_conflict: Option<PortConflict>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PortConflict {
+    #[serde(deserialize_with = "positive_u16")]
+    pub port: u16,
+    #[serde(deserialize_with = "nonempty_string")]
+    pub protocol: String,
+    #[serde(deserialize_with = "positive_u32")]
+    pub owning_process_id: u32,
+}
+
+fn positive_u16<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let value = u16::deserialize(deserializer)?;
+    if value == 0 {
+        Err(de::Error::custom("value must be greater than zero"))
+    } else {
+        Ok(value)
+    }
+}
+
+fn nonnegative_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    Ok(u32::deserialize(deserializer)?)
+}
+
+fn optional_port_conflict<'de, D>(deserializer: D) -> Result<Option<PortConflict>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    Option::<PortConflict>::deserialize(deserializer)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

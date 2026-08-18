@@ -1,7 +1,10 @@
+pub mod cert;
+pub mod dns;
 pub mod instance;
 pub mod ipc;
 pub mod logging;
 pub mod paths;
+pub mod setup;
 pub mod shutdown;
 pub mod state;
 
@@ -97,6 +100,7 @@ pub fn run() -> Result<(), DaemonRunError> {
         paths,
         state.client(),
         logging.health_handle(),
+        std::sync::Arc::new(crate::setup::NetworkRuntime::default()),
     );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

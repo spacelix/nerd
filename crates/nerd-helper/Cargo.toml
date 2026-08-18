@@ -8,6 +8,9 @@ publish.workspace = true
 
 [dependencies]
 nerd-core = { path = "../nerd-core" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true
