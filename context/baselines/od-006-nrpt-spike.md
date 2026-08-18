@@ -1,8 +1,8 @@
 # OD-006 NRPT Compatibility Spike
 
-- Status: researching (draft evidence collected; mutation phases pending)
+- Status: complete (probe, mutation, browser, and sleep/resume evidence collected; end-to-end resolution deferred to release testing)
 - Date: 2026-08-16
-- Branch: `test/nrpt-compatibility`
+- Branch: `test/nrpt-mutation`
 
 ## Purpose
 
@@ -79,14 +79,14 @@ Produce a supported matrix for wildcard `.test` resolution through Windows NRPT 
 
 | Browser | Setting | Value | Inference |
 |---|---|---|---|
-| Chrome | SecureDnsMode | not configured | Profile not present |
-| Edge | SecureDnsMode | not configured | Profile not present |
-| Brave | SecureDnsMode | not configured | Secure DNS off; NRPT applies |
+| Chrome | SecureDnsMode | not configured | Assuming Windows DNS client; verify manually |
+| Edge | SecureDnsMode | not configured | Assuming Windows DNS client; verify manually |
+| Brave | SecureDnsMode | not configured | Assuming Windows DNS client; verify manually |
 | Firefox | network.trr.mode | not installed | N/A |
 
 ### Finding
 
-On this machine, Brave is installed and its secure DNS setting is off. Chrome and Edge profiles are not present. No measured browser is configured to use its own DoH resolver, so `.test` queries from Brave travel through the Windows DNS client and NRPT. If a user later enables browser secure DNS, those queries will bypass NRPT and likely fail for `.test`. Nerd's planned behavior remains: detect the enabled-browser-DoH condition and report a diagnostic; never reconfigure browser policy.
+The probe returns `not configured` when a browser preference is absent or its profile cannot be parsed; it cannot distinguish "profile not present" from "secure DNS off". On this machine Brave is the installed browser and no secure-DNS preference was found, so its `.test` queries travel through the Windows DNS client and NRPT. If a user later enables browser secure DNS, those queries will bypass NRPT and likely fail for `.test`. Nerd's planned behavior remains: detect the enabled-browser-DoH condition and report a diagnostic; never reconfigure browser policy.
 
 ## Sleep/Resume
 
@@ -129,7 +129,7 @@ Windows 10 Home/Pro reached end of support on 2025-10-14. The final available Ho
 | Test image | Windows 10 22H2 x64 ISO with the latest monthly patch; Windows 11 x64 current release |
 | Older build behavior | Installation refused with a clear message, no mutation |
 
-Status: researching. The final claim is written to `compatibility.md` when a Windows 10 22H2 image is exercised.
+Status: resolved. OD-007 is closed; minimum Windows 10 is 22H2 build 19045. Image verification is deferred to release testing because no Windows 10 image is available on the measurement machine.
 
 ## Next Steps
 

@@ -57,18 +57,18 @@ function New-DnsResponse {
     if ($null -eq $name -or $offset + 4 -gt $Query.Length) { return $null }
 
     $isTest = $name -eq "test" -or $name.EndsWith(".test")
+    $question = $Query[12..($offset + 3)]
     if (-not $isTest) {
         $flags = @(0x81, 0x83)
         $answerCount = 0
         $response = @( $id[0]; $id[1]; $flags[0]; $flags[1]; $Query[4]; $Query[5];
                       0; 0; 0; 0; 0; 0 )
-        $response += $Query[12..($Query.Length - 1)]
+        $response += $question
         return [byte[]]$response
     }
 
     $flags = @(0x81, 0x80)
     $answerCount = 1
-    $question = $Query[12..($Query.Length - 1)]
     $answer = @(
         0xC0, 0x0C,          # pointer to question name
         0x00, 0x01,          # type A
@@ -126,8 +126,8 @@ function Invoke-TcpResponder {
                 $response = New-DnsResponse -Query $query
                 if ($response) {
                     $outLength = [BitConverter]::GetBytes([UInt16]$response.Length)
-                    $stream.Write($outLength[1], 0, 1)
-                    $stream.Write($outLength[0], 0, 1)
+                    $stream.WriteByte($outLength[1])
+                    $stream.WriteByte($outLength[0])
                     $stream.Write($response, 0, $response.Length)
                     $stream.Flush()
                 }

@@ -30,7 +30,7 @@ function New-Result {
 $isElevated = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isElevated) {
-    Write-Error "This spike must run from an elevated Windows terminal so NRPT can be mutated."
+    Write-Error "This spike must run from an elevated Windows terminal so NRPT can be mutated." -ErrorAction Continue
     exit 2
 }
 
@@ -130,7 +130,8 @@ finally {
     }
     if ($ruleName) {
         Remove-DnsClientNrptRule -Name $ruleName -ErrorAction SilentlyContinue
-        New-Result "remove-rule" "ok" ("rule {0} removed" -f $ruleName)
+        $removed = -not (Get-DnsClientNrptRule -Name $ruleName -ErrorAction SilentlyContinue)
+        New-Result "remove-rule" $(if ($removed) { "ok" } else { "failed" }) ("rule {0} {1}" -f $ruleName, $(if ($removed) { "removed" } else { "still present" }))
     }
     $snapshotAfter = @(Get-DnsClientNrptRule | ForEach-Object { $_.Name } | Sort-Object)
     $diff = Compare-Object $snapshotBefore $snapshotAfter
