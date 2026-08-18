@@ -118,10 +118,10 @@ fn build_catalog() -> Result<Catalog, String> {
 pub fn probe_port(port: u16, protocol: &str) -> Result<Option<PortConflict>, std::io::Error> {
     let script = match protocol {
         "udp" => format!(
-            "$ErrorActionPreference='Stop'; $p = Get-NetUDPEndpoint -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess; if ($p) {{ $p }}"
+            "$p = Get-NetUDPEndpoint -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess; if ($p) {{ $p }}; exit 0"
         ),
         "tcp" => format!(
-            "$ErrorActionPreference='Stop'; $p = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess; if ($p) {{ $p }}"
+            "$p = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess; if ($p) {{ $p }}; exit 0"
         ),
         other => return Err(std::io::Error::other(format!("unsupported protocol '{other}'"))),
     };
