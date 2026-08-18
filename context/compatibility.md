@@ -8,7 +8,7 @@ This file defines support claims and mandatory test dimensions. `Required` means
 
 | Target | MVP status | Notes |
 |---|---|---|
-| Windows 10 x64 | Required | Minimum proposal is 22H2 build 19045 (OD-007, researching); Windows 10 Home/Pro reached end of support 2025-10-14 |
+| Windows 10 x64 | Required | Minimum is 22H2 build 19045 (OD-007 resolved); Windows 10 Home/Pro reached end of support 2025-10-14; image verification deferred to release testing |
 | Windows 11 x64 | Required | Current supported releases |
 | Windows ARM64 | Unsupported | Post-MVP Feature 14 |
 | Windows Server | Unsupported | Not an MVP target |
@@ -76,8 +76,8 @@ Exact versions are selected when Feature 05 begins and recorded in `library-docs
 
 | Case | MVP status |
 |---|---|
-| DNS UDP | Required |
-| DNS TCP | Required |
+| DNS UDP | Required | `.test` via NRPT; end-to-end verified on release testing on a clean image |
+| DNS TCP | Required | `.test` via NRPT; end-to-end verified on release testing on a clean image |
 | IPv4 loopback | Required |
 | IPv6 loopback | OD-014 |
 | HTTP/1.1 | Required |
@@ -85,7 +85,8 @@ Exact versions are selected when Feature 05 begins and recorded in `library-docs
 | Firefox trust behavior | Required diagnostic/support decision during Feature 02 |
 | SSE | Required |
 | WebSocket/HMR | Required |
-| VPN/corporate DNS | Feature 02 compatibility spike (OD-006 researching; Tailscale coexistence evidence collected, mutation test pending) |
+| VPN/corporate DNS | OD-006 resolved; Tailscale MagicDNS coexists with temporary `.test` rule; add/remove/restore cycle verified |
+| Port 53 occupied by `hns`/WSL2 | Required diagnostic | Nerd must detect and report the foreign listener, never terminate it; see OD-006 spike |
 | LAN/public access | Unsupported, post-MVP Feature 15 |
 
 ## Services
