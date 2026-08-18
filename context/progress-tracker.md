@@ -5,16 +5,16 @@ Update this file whenever feature state changes. Only one feature may be `in pro
 ## Current Status
 
 - Phase: Phase 2 - Windows Network Foundation
-- In progress: Feature 02 - Windows DNS, HTTPS, and privilege setup
-- Last completed: OD-006 NRPT spike and OD-007 Windows 10 minimum build
-- Next: Complete Feature 02 acceptance, then start Feature 03
+- In progress: None (Feature 01 and 02 complete)
+- Last completed: Feature 02 - Windows DNS, HTTPS, and privilege setup
+- Next: Start Feature 03 (Node runtime and package managers)
 
 ## Features
 
 | ID | Feature | Specification | Status |
 |---|---|---|---|
 | 01 | Foundation, daemon, state, IPC | `features/01-foundation-daemon-ipc.md` | complete |
-| 02 | Windows DNS, HTTPS, privilege setup | `features/02-windows-dns-https.md` | in progress |
+| 02 | Windows DNS, HTTPS, privilege setup | `features/02-windows-dns-https.md` | complete |
 | 03 | Node runtime and package managers | `features/03-node-runtime-package-managers.md` | planned |
 | 04 | Project discovery and configuration | `features/04-project-discovery-config.md` | planned |
 | 05 | Frameworks and process supervision | `features/05-frameworks-process-supervision.md` | planned |
@@ -44,11 +44,12 @@ Allowed status values: `planned`, `in progress`, `blocked`, `complete`.
 
 ## Blockers
 
-Feature 01 is complete and has no open decision blocker.
+Feature 01 and 02 are complete with no open decision blockers.
+
+Deferred to release testing: end-to-end UDP/TCP `.test` resolution and after-resume resolution on a clean image without WSL2/`hns` on port 53.
 
 Known upcoming blockers:
 
-- Feature 02: OD-006 and OD-007 are closed; no decision blocker. Deferred to release testing: end-to-end UDP/TCP `.test` resolution and after-resume resolution on a clean image without WSL2/`hns` on port 53.
 - Feature 10: OD-002 MySQL artifacts, OD-003 PostgreSQL artifacts, and OD-004 Redis strategy.
 - Public beta: OD-001 final product identity and OD-005 code-signing custody.
 
