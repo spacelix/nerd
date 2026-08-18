@@ -15,10 +15,13 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+hickory-server = { version = "=0.26.1" }
 jsonschema = { version = "=0.49.9", default-features = false }
+rcgen = { version = "=0.14.9" }
 rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled"] }
 serde = { version = "=1.0.229", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
+time = { version = "=0.3.55", default-features = false, features = ["std"] }
 tokio = { version = "=1.53.1", default-features = false, features = [
     "io-util",
     "macros",
@@ -35,12 +38,16 @@ windows-sys = { version = "=0.61.2", default-features = false, features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
     "Win32_System_Com",
     "Win32_System_Diagnostics_Debug",
+    "Win32_System_Memory",
     "Win32_System_Pipes",
     "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
     "Win32_System_Threading",
     "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [workspace.lints.rust]

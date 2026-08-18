@@ -173,6 +173,52 @@ Versions are exact for the foundation implementation. Updating one requires read
 - Prohibited usage: runtime dependency resolution, automatic policy exceptions, or unreviewed advisory suppression
 - Verification: `cargo deny check advisories bans licenses sources`
 
+## Feature 02 Dependencies
+
+Versions are exact for the Feature 02 implementation. Updating one requires reading the new official documentation and rerunning all Feature 02 checks.
+
+### hickory-server
+
+- Version policy: `=0.26.1`
+- Feature: authoritative in-memory DNS server for the `.test` zone in the daemon
+- Why needed: safe, fuzzable DNS parsing and serving over UDP and TCP; wildcard `*.test` A records are natively supported by the in-memory zone handler
+- Official docs: https://docs.rs/hickory-server/0.26.1/hickory_server/
+- Security boundary: binds loopback only; serves only the `.test` zone; non-`.test` names receive a negative response; no public forwarding
+- Allowed modules: `nerd-daemon::dns`
+- Prohibited usage: binding non-loopback addresses, forwarding queries upstream, and dynamic zone reload from untrusted input
+- Verification: UDP and TCP `.test` resolution, negative answers, port-conflict diagnostic, and sleep/resume re-probe tests
+
+### rcgen
+
+- Version policy: `=0.14.9`
+- Feature: generate the per-user root CA and leaf certificates (default features: `crypto`, `pem`, `ring`)
+- Why needed: pure-Rust CA and leaf generation with SAN, key usage, and validity control
+- Official docs: https://docs.rs/rcgen/0.14.9/rcgen/
+- Security boundary: private-key material is DPAPI-protected before persistence and never enters logs or IPC
+- Allowed modules: `nerd-daemon::cert`
+- Prohibited usage: persisting keys unencrypted, emitting SANs beyond validated hostnames, and certificate reuse across unrelated identities
+- Verification: CA and leaf generation, trust install/probe/remove, and TLS handshake tests
+
+### time
+
+- Version policy: `=0.3.55`, default features disabled
+- Feature: certificate validity (`OffsetDateTime`, `Duration`) required by rcgen
+- Why needed: rcgen `CertificateParams` uses `time::OffsetDateTime` for `not_before`/`not_after`
+- Official docs: https://docs.rs/time/0.3.55/time/
+- Security boundary: no untrusted input parsing
+- Allowed modules: `nerd-daemon::cert`
+- Verification: leaf renewal threshold tests
+
+### windows-sys (Feature 02 feature additions)
+
+- Existing policy: `=0.61.2`; add feature families `Win32_Security_Cryptography` (DPAPI `CryptProtectData`/`CryptUnprotectData`, cert-store APIs) and `Win32_System_Registry` (NRPT rule mutation)
+- Feature: CA key DPAPI protection, CurrentUser trust-store install/probe/remove, NRPT registry mutation in the helper
+- Official docs: https://docs.rs/windows-sys/0.61.2/windows_sys/ and linked Microsoft Learn API pages
+- Security boundary: unsafe calls stay in focused Windows modules; NRPT writes only the Nerd `.test` rule with ownership comment; cert operations only touch the Nerd-owned fingerprint
+- Allowed modules: `nerd-daemon::cert`, `nerd-daemon::dns`, `nerd-helper::nrpt`
+- Prohibited usage: deleting registry trees outside the Nerd-owned NRPT rule key, and removing certificates without fingerprint ownership match
+- Verification: NRPT add/remove postconditions, DPAPI round-trip, and trust-store ownership tests
+
 ## Service Distribution Rules
 
 Every service adapter must document before implementation:

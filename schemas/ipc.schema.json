@@ -52,6 +52,42 @@
             "type": { "const": "status" },
             "payload": { "$ref": "#/$defs/statusRequest" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "network_setup" },
+            "payload": { "$ref": "#/$defs/networkSetupRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "network_uninstall" },
+            "payload": { "$ref": "#/$defs/networkUninstallRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "network_repair" },
+            "payload": { "$ref": "#/$defs/networkRepairRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "network_status" },
+            "payload": { "$ref": "#/$defs/networkStatusRequest" }
+          }
         }
       ]
     },
@@ -72,6 +108,26 @@
       }
     },
     "statusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "networkSetupRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "networkUninstallRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "networkRepairRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "networkStatusRequest": {
       "type": "object",
       "additionalProperties": false,
       "maxProperties": 0
@@ -104,6 +160,42 @@
           "properties": {
             "type": { "const": "status" },
             "payload": { "$ref": "#/$defs/statusResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "network_setup" },
+            "payload": { "$ref": "#/$defs/networkSetupResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "network_uninstall" },
+            "payload": { "$ref": "#/$defs/networkUninstallResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "network_repair" },
+            "payload": { "$ref": "#/$defs/networkRepairResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "network_status" },
+            "payload": { "$ref": "#/$defs/networkStatusResponse" }
           }
         },
         {
@@ -201,6 +293,60 @@
         "workingSetBytes": { "type": "integer", "minimum": 0 },
         "peakWorkingSetBytes": { "type": "integer", "minimum": 0 },
         "privateUsageBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "networkSetupResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["success", "rolledBack"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "rolledBack": { "type": "boolean" },
+        "nrptRuleName": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "caFingerprint": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "networkUninstallResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["success", "removedNrptRule", "removedCa", "preservedUnrelatedRules"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "removedNrptRule": { "type": "boolean" },
+        "removedCa": { "type": "boolean" },
+        "preservedUnrelatedRules": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "networkRepairResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["success", "action"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "action": { "type": "string", "minLength": 1 }
+      }
+    },
+    "networkStatusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dnsListenerActive", "nrptRulePresent", "caPresent"],
+      "properties": {
+        "dnsListenerActive": { "type": "boolean" },
+        "nrptRulePresent": { "type": "boolean" },
+        "caPresent": { "type": "boolean" },
+        "port53Conflict": { "$ref": "#/$defs/portConflict" },
+        "port80Conflict": { "$ref": "#/$defs/portConflict" },
+        "port443Conflict": { "$ref": "#/$defs/portConflict" }
+      }
+    },
+    "portConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port", "protocol", "owningProcessId"],
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "protocol": { "type": "string", "minLength": 1 },
+        "owningProcessId": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
       }
     },
     "errorResponse": {

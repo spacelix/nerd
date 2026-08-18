@@ -4,7 +4,8 @@ use nerd_core::{
     APPLICATION_VERSION, IPC_PROTOCOL_VERSION, PIPE_NAME,
     codec::{FRAME_PREFIX_BYTES, MAX_FRAME_BYTES, decode_payload, encode_frame},
     ipc::{
-        ClientKind, ErrorCode, ErrorResponse, HandshakeRequest, HealthStatus, Request,
+        ClientKind, ErrorCode, ErrorResponse, HandshakeRequest, HealthStatus, NetworkRepairRequest,
+        NetworkSetupRequest, NetworkStatusRequest, NetworkUninstallRequest, Request,
         RequestEnvelope, Response, ResponseEnvelope, StatusRequest, StatusResponse,
     },
 };
@@ -35,11 +36,154 @@ pub fn run_from_env() -> i32 {
                 error.exit_code()
             }
         },
+        Ok(Command::Network { action }) => match run_network(action) {
+            Ok(()) => 0,
+            Err(error) => {
+                eprintln!("nerd: {error}");
+                error.exit_code()
+            }
+        },
         Err(error) => {
             eprintln!("nerd: {error}");
-            eprintln!("usage: nerd <status|--version>");
+            eprintln!("usage: nerd <status|network <setup|uninstall|repair|status>|--version>");
             error.exit_code()
         }
+    }
+}
+
+fn run_network(action: NetworkAction) -> Result<(), CliError> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(CliError::Runtime)?;
+    runtime.block_on(async move {
+        let mut connection = connect().await?;
+        let (_, request) = match action {
+            NetworkAction::Setup => (
+                Uuid::new_v4(),
+                Request::NetworkSetup(NetworkSetupRequest {}),
+            ),
+            NetworkAction::Uninstall => (
+                Uuid::new_v4(),
+                Request::NetworkUninstall(NetworkUninstallRequest {}),
+            ),
+            NetworkAction::Repair => (
+                Uuid::new_v4(),
+                Request::NetworkRepair(NetworkRepairRequest {}),
+            ),
+            NetworkAction::Status => (
+                Uuid::new_v4(),
+                Request::NetworkStatus(NetworkStatusRequest {}),
+            ),
+        };
+        let response = timeout(
+            REQUEST_TIMEOUT,
+            exchange_network(&mut connection.client, request),
+        )
+        .await
+        .map_err(|_| CliError::Timeout)??;
+        print_network(&response);
+        Ok(())
+    })
+}
+
+async fn exchange_network(
+    client: &mut NamedPipeClient,
+    request: Request,
+) -> Result<Response, CliError> {
+    let handshake_id = Uuid::new_v4();
+    write_request(
+        client,
+        &RequestEnvelope {
+            protocol_version: IPC_PROTOCOL_VERSION,
+            request_id: handshake_id,
+            request: Request::Handshake(HandshakeRequest {
+                client_kind: ClientKind::Cli,
+                client_version: APPLICATION_VERSION.to_owned(),
+                minimum_protocol_version: IPC_PROTOCOL_VERSION,
+                maximum_protocol_version: IPC_PROTOCOL_VERSION,
+            }),
+        },
+    )
+    .await?;
+    let handshake = read_response(client).await?;
+    ensure_response_id(&handshake, handshake_id)?;
+    match handshake.response {
+        Response::Handshake(response)
+            if response.selected_protocol_version == IPC_PROTOCOL_VERSION => {}
+        Response::Error(error) => return Err(map_server_error(error)),
+        _ => return Err(CliError::InvalidResponse),
+    }
+
+    let request_id = Uuid::new_v4();
+    write_request(
+        client,
+        &RequestEnvelope {
+            protocol_version: IPC_PROTOCOL_VERSION,
+            request_id,
+            request,
+        },
+    )
+    .await?;
+    let response = read_response(client).await?;
+    ensure_response_id(&response, request_id)?;
+    Ok(response.response)
+}
+
+fn print_network(response: &Response) {
+    match response {
+        Response::NetworkSetup(setup) => {
+            if setup.success {
+                println!("Network setup complete.");
+                if let Some(rule) = &setup.nrpt_rule_name {
+                    println!("NRPT rule: {rule}");
+                }
+                if let Some(fingerprint) = &setup.ca_fingerprint {
+                    println!("CA fingerprint: {fingerprint}");
+                }
+            } else {
+                println!("Network setup failed (rolled back).");
+            }
+        }
+        Response::NetworkUninstall(uninstall) => {
+            println!("Network uninstall complete.");
+            println!("Removed NRPT rule: {}", uninstall.removed_nrpt_rule);
+            println!("Removed CA: {}", uninstall.removed_ca);
+            println!(
+                "Preserved unrelated NRPT rules: {}",
+                uninstall.preserved_unrelated_rules
+            );
+        }
+        Response::NetworkRepair(repair) => {
+            println!("Network repair: {}", repair.action);
+        }
+        Response::NetworkStatus(status) => {
+            println!("DNS listener active: {}", status.dns_listener_active);
+            println!("NRPT rule present: {}", status.nrpt_rule_present);
+            println!("CA present: {}", status.ca_present);
+            if let Some(conflict) = &status.port_53_conflict {
+                println!(
+                    "Port 53 conflict: PID {} owns {}:{}",
+                    conflict.owning_process_id, conflict.protocol, conflict.port
+                );
+            }
+            if let Some(conflict) = &status.port_80_conflict {
+                println!(
+                    "Port 80 conflict: PID {} owns {}:{}",
+                    conflict.owning_process_id, conflict.protocol, conflict.port
+                );
+            }
+            if let Some(conflict) = &status.port_443_conflict {
+                println!(
+                    "Port 443 conflict: PID {} owns {}:{}",
+                    conflict.owning_process_id, conflict.protocol, conflict.port
+                );
+            }
+        }
+        Response::Error(error) => {
+            println!("Network request rejected: {}", error.message);
+        }
+        _ => println!("Unexpected network response."),
     }
 }
 
@@ -251,15 +395,29 @@ fn parse_command(mut arguments: impl Iterator<Item = OsString>) -> Result<Comman
     let Some(command) = arguments.next() else {
         return Err(CliError::Usage);
     };
-    if arguments.next().is_some() {
-        return Err(CliError::Usage);
-    }
-    if command == "status" {
-        Ok(Command::Status)
-    } else if command == "--version" {
-        Ok(Command::Version)
-    } else {
-        Err(CliError::Usage)
+    let command = command.to_string_lossy();
+    match command.as_ref() {
+        "status" => {
+            if arguments.next().is_some() {
+                return Err(CliError::Usage);
+            }
+            Ok(Command::Status)
+        }
+        "--version" => {
+            if arguments.next().is_some() {
+                return Err(CliError::Usage);
+            }
+            Ok(Command::Version)
+        }
+        "network" => {
+            let action = arguments.next().ok_or(CliError::Usage)?;
+            if arguments.next().is_some() {
+                return Err(CliError::Usage);
+            }
+            let action = NetworkAction::parse(&action.to_string_lossy())?;
+            Ok(Command::Network { action })
+        }
+        _ => Err(CliError::Usage),
     }
 }
 
@@ -267,6 +425,27 @@ fn parse_command(mut arguments: impl Iterator<Item = OsString>) -> Result<Comman
 enum Command {
     Status,
     Version,
+    Network { action: NetworkAction },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NetworkAction {
+    Setup,
+    Uninstall,
+    Repair,
+    Status,
+}
+
+impl NetworkAction {
+    fn parse(value: &str) -> Result<Self, CliError> {
+        match value {
+            "setup" => Ok(Self::Setup),
+            "uninstall" => Ok(Self::Uninstall),
+            "repair" => Ok(Self::Repair),
+            "status" => Ok(Self::Status),
+            _ => Err(CliError::Usage),
+        }
+    }
 }
 
 #[derive(Debug)]

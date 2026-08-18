@@ -28,6 +28,7 @@ use uuid::Uuid;
 use crate::{
     logging::LogHealthHandle,
     paths::AppPaths,
+    setup::{NetworkRuntime, NetworkSetup, SetupError},
     state::{SUPPORTED_SCHEMA_VERSION, StateClient},
     windows::{self, SecurityDescriptor},
 };
@@ -48,6 +49,7 @@ pub struct DaemonContext {
     paths: AppPaths,
     state: StateClient,
     logging: LogHealthHandle,
+    network: NetworkSetup,
 }
 
 impl DaemonContext {
@@ -56,13 +58,15 @@ impl DaemonContext {
         paths: AppPaths,
         state: StateClient,
         logging: LogHealthHandle,
+        runtime: std::sync::Arc<NetworkRuntime>,
     ) -> Self {
         Self {
             instance_id,
             started_at: Instant::now(),
-            paths,
+            paths: paths.clone(),
             state,
             logging,
+            network: NetworkSetup::new(paths, runtime),
         }
     }
 
@@ -376,6 +380,22 @@ async fn handle_connection(
 
         let response = match request.request {
             Request::Status(_) => Response::Status(context.status().await),
+            Request::NetworkSetup(_) => match context.network.setup().await {
+                Ok(response) => Response::NetworkSetup(response),
+                Err(error) => Response::Error(network_error(error)),
+            },
+            Request::NetworkUninstall(_) => match context.network.uninstall().await {
+                Ok(response) => Response::NetworkUninstall(response),
+                Err(error) => Response::Error(network_error(error)),
+            },
+            Request::NetworkRepair(_) => match context.network.repair().await {
+                Ok(response) => Response::NetworkRepair(response),
+                Err(error) => Response::Error(network_error(error)),
+            },
+            Request::NetworkStatus(_) => match context.network.status() {
+                Ok(response) => Response::NetworkStatus(response),
+                Err(error) => Response::Error(network_error(error)),
+            },
             Request::Handshake(_) => Response::Error(ErrorResponse::new(
                 ErrorCode::InvalidRequest,
                 "handshake is already complete",
@@ -483,6 +503,11 @@ fn create_listener(
             (&raw mut attributes).cast::<std::ffi::c_void>(),
         )
     }
+}
+
+fn network_error(error: SetupError) -> ErrorResponse {
+    let message = error.to_string();
+    ErrorResponse::new(ErrorCode::Internal, message, false)
 }
 
 fn worse_health(left: HealthStatus, right: HealthStatus) -> HealthStatus {
@@ -647,6 +672,7 @@ mod tests {
             paths,
             state.client(),
             LogHealthHandle::default(),
+            std::sync::Arc::new(crate::setup::NetworkRuntime::default()),
         );
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -691,6 +717,7 @@ mod tests {
             paths,
             state.client(),
             LogHealthHandle::default(),
+            std::sync::Arc::new(crate::setup::NetworkRuntime::default()),
         );
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
