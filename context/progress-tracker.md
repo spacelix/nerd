@@ -4,10 +4,10 @@ Update this file whenever feature state changes. Only one feature may be `in pro
 
 ## Current Status
 
-- Phase: Phase 2 - Windows Network Foundation (OD-006/OD-007 research)
-- In progress: OD-006 NRPT compatibility spike
-- Last completed: Feature 01 - Foundation, daemon, state, and IPC
-- Next: Complete OD-006 mutation/browser/sleep phases, verify OD-007 on a Windows 10 22H2 image, then start Feature 02 production implementation
+- Phase: Phase 2 - Windows Network Foundation
+- In progress: None (OD-006 and OD-007 resolved)
+- Last completed: OD-006 NRPT spike and OD-007 Windows 10 minimum build
+- Next: Start Feature 02 production implementation using the OD-006 supported matrix
 
 ## Features
 
@@ -48,7 +48,7 @@ Feature 01 is complete and has no open decision blocker.
 
 Known upcoming blockers:
 
-- Feature 02: OD-006 NRPT compatibility spike in progress (read-only probe evidence committed; mutation, browser secure DNS, and sleep/resume phases require explicit approval) and OD-007 minimum Windows 10 build proposed as 22H2 build 19045 pending image verification.
+- Feature 02: OD-006 and OD-007 are closed; no decision blocker. Deferred to release testing: end-to-end UDP/TCP `.test` resolution and after-resume resolution on a clean image without WSL2/`hns` on port 53.
 - Feature 10: OD-002 MySQL artifacts, OD-003 PostgreSQL artifacts, and OD-004 Redis strategy.
 - Public beta: OD-001 final product identity and OD-005 code-signing custody.
 

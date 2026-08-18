@@ -19,8 +19,8 @@ This register contains unresolved choices that can change implementation. Do not
 | OD-003 | PostgreSQL EDB ZIP URL/API, checksum/signature, license, and Windows 10 support | Feature 10 PostgreSQL | researching | Approved artifact record in `library-docs.md` |
 | OD-004 | Redis strategy: Memurai, explicit Garnet, external-only Redis, or removal from MVP | Feature 10 cache | blocked | Accepted replacement/update to ADR 006 and Feature 10 |
 | OD-005 | Windows code-signing provider and private-key custody | Public beta, Feature 12 | open | Signing runbook and CI identity policy |
-| OD-006 | NRPT compatibility spike on Windows 10 Home/Pro, VPN, browser secure DNS, and sleep/resume | Feature 02 | researching | Spike report and supported matrix; read-only probe evidence committed, mutation/browser/sleep phases pending approval |
-| OD-007 | Exact minimum Windows 10 build | Installer and support | researching | Proposal: 22H2 build 19045 x64; pending Windows 10 22H2 test-image verification |
+| OD-006 | NRPT compatibility spike on Windows 10 Home/Pro, VPN, browser secure DNS, and sleep/resume | Feature 02 | closed | Spike report and supported matrix; see `baselines/od-006-nrpt-spike.md` and Feature 02 spec. End-to-end resolution on a clean image is deferred to release testing |
+| OD-007 | Exact minimum Windows 10 build | Installer and support | closed | Minimum Windows 10 is 22H2 x64 build 19045 (final Home/Pro release); image verification deferred to release testing, see `baselines/od-006-nrpt-spike.md` |
 
 ## Decisions Before Relevant Feature
 
@@ -66,6 +66,8 @@ This register contains unresolved choices that can change implementation. Do not
 | CD-006 | Installation scope | Per-user app with limited system setup, ADR 003 |
 | CD-007 | Project execution | Explicit Start/Stop and project trust, ADR 002 |
 | CD-008 | Commit/version policy | `versioning.md` |
+| CD-009 | NRPT compatibility matrix for Feature 02 | OD-006 spike report; see `baselines/od-006-nrpt-spike.md` |
+| CD-010 | Minimum Windows 10 build | 22H2 x64 build 19045; see OD-007 and `baselines/od-006-nrpt-spike.md` |
 
 ## Review Rule
 

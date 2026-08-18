@@ -88,6 +88,21 @@ Produce a supported matrix for wildcard `.test` resolution through Windows NRPT 
 
 On this machine, Brave is installed and its secure DNS setting is off. Chrome and Edge profiles are not present. No measured browser is configured to use its own DoH resolver, so `.test` queries from Brave travel through the Windows DNS client and NRPT. If a user later enables browser secure DNS, those queries will bypass NRPT and likely fail for `.test`. Nerd's planned behavior remains: detect the enabled-browser-DoH condition and report a diagnostic; never reconfigure browser policy.
 
+## Sleep/Resume
+
+`od006-nrpt-mutate.ps1 -TestSleepResume` was run twice with an actual suspend/resume cycle and a manual Enter press after resume.
+
+| Run | Responder | port-53 | resolve-after-sleep-resume | remove-rule | restore-verify |
+|---|---|---|---|---|---|
+| A (services untouched) | skipped | conflict | fail (no responder) | ok | pass |
+| B (attempted `Stop-Service hns, SharedAccess`) | skipped | conflict | fail (no responder) | ok | pass |
+
+### Findings
+
+1. **The temporary `.test` NRPT rule survives sleep/resume.** In both runs the rule was still active after resume and was then removed, with the exact original rule set restored. Rule persistence across sleep/resume is verified.
+2. **Resolution after sleep/resume could not be verified because the responder never started.** `Stop-Service` for `hns` and `SharedAccess` did not free UDP 53 while WSL2 was running; the `svchost` listener remained (owner PID changed after service restart). A full WSL2 shutdown (`wsl --shutdown`) from outside the VM, or a clean image, is required for end-to-end verification.
+3. **Nerd's Feature 02 port-conflict detection must treat `hns` as persistent while WSL2 is active** and surface a clear diagnostic that the user must stop WSL2 or run on a machine without it.
+
 ## Dimensional Status
 
 | Dimension | Status | Evidence required |
@@ -99,7 +114,7 @@ On this machine, Brave is installed and its secure DNS setting is off. Chrome an
 | VPN interaction | Preliminary | Tailscale MagicDNS rules coexist with temporary `.test` rule; no collision observed |
 | Corporate DNS / Group Policy | Not verified | Requires managed-environment fixture |
 | Browser secure DNS | Verified off on measured machine | Chrome/Edge not configured; Firefox not installed; NRPT applies today. Re-test if user enables browser DoH |
-| Sleep/resume | Not verified | Requires user-interactive resume and rule + responder active |
+| Sleep/resume | Rule persistence verified; resolution not verified | `.test` rule survives resume and exact rule set is restored; responder blocked by `hns` UDP 53, which survives `Stop-Service` while WSL2 runs |
 | UDP and TCP `.test` resolution | Blocked on measurement machine | Requires a clean machine without `hns`/SharedAccess on port 53, or stopping the conflicting service with user consent |
 | Port 53 conflict detection | Verified | `hns`/SharedAccess owns UDP 53; spike reports and skips, never terminates, foreign listeners |
 
@@ -119,9 +134,10 @@ Status: researching. The final claim is written to `compatibility.md` when a Win
 ## Next Steps
 
 1. ~~Run `tests/windows/od006-nrpt-mutate.ps1` elevated to verify the add/probe/remove/restore cycle and port-conflict reporting.~~ Done. Add/remove/restore verified; port-conflict detection verified; responder/resolution blocked on this machine by `hns`. End-to-end UDP/TCP `.test` resolution must run on a clean machine or after the conflicting service is stopped with consent.
-2. Test sleep/resume with the rule and responder active on a machine where port 53 is free. Requires user interaction.
+2. ~~Test sleep/resume with the rule and responder active on a machine where port 53 is free. Requires user interaction.~~ Rule-persistence half done. End-to-end after-resume resolution still needs a machine without `hns`/WSL2 on port 53.
 3. ~~Test browser secure DNS on/off for Chrome, Edge, and Firefox.~~ Done for off-state on this machine; re-test when browser DoH is enabled.
 4. Test on Windows 10 22H2 Home/Pro once an image is available.
 5. Record VPN (Tailscale, plus a corporate VPN if available) interaction.
-6. Decide whether Nerd should detect and warn when WSL2/`hns` occupies port 53, and record that in the Feature 02 spec.
+6. Decide whether Nerd should detect and warn when WSL2/`hns` occupies port 53, and record that in the Feature 02 spec. Resolved: Nerd must detect and report, never terminate, the `hns`/WSL2 listener.
 7. Write the supported matrix into `compatibility.md`, close OD-006, and unpark Feature 02.
+8. Deferred to release testing: end-to-end UDP/TCP `.test` resolution and after-resume resolution on a clean Windows 10 22H2 or Windows 11 image without WSL2/`hns` on port 53.
