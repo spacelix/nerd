@@ -1,141 +1,240 @@
 # UI Tokens
 
-Nerd is a compact Windows developer utility, not a marketing dashboard. Use semantic CSS variables so light and dark themes share component code. Components must not contain hardcoded colors or raw Tailwind palette classes.
+Nerd is a quiet, dense, Windows developer utility. The chrome disappears so the projects do not. Tokens are sourced from the [shadcn/ui](https://ui.shadcn.com) new-york style (OKLCH neutral palette) as the canonical base. Nerd-specific extensions layer on top for status colors and log surfaces. Components never use hardcoded colors or raw Tailwind palette classes.
 
 ## Typography
 
-Use local system fonts only. Do not download web fonts.
+System fonts only. Do not download web fonts.
 
 ```css
---font-sans: "Segoe UI Variable", "Segoe UI", sans-serif;
---font-mono: "Cascadia Code", "Cascadia Mono", monospace;
+--font-sans:
+  "Segoe UI Variable", "Segoe UI", system-ui, -apple-system,
+  BlinkMacSystemFont, "Inter", sans-serif;
+
+--font-mono:
+  "Cascadia Code", "Cascadia Mono", Consolas, "JetBrains Mono", monospace;
 ```
 
-| Role | Size | Weight | Line height |
-|---|---:|---:|---:|
-| Window title | 18px | 600 | 26px |
-| Section title | 14px | 600 | 20px |
-| Body | 13px | 400 | 20px |
-| Label | 12px | 600 | 16px |
-| Metadata | 11px | 400 | 16px |
-| Code/log | 12px | 400 | 18px |
+### Type scale
 
-## Light Theme
+| Role | Size | Weight | Line | Tracking |
+|---|---:|---:|---:|---:|
+| Display | 36px | 600 | 44px | -0.026em |
+| Headline | 28px | 600 | 36px | -0.022em |
+| Title | 20px | 600 | 28px | -0.018em |
+| Subtitle | 16px | 600 | 24px | -0.010em |
+| Body | 13px | 400 | 20px | 0 |
+| Body strong | 13px | 600 | 20px | 0 |
+| Label | 12px | 500 | 16px | 0 |
+| Mono | 12px | 400 | 18px | -0.005em |
+| Caption | 11px | 400 | 16px | 0 |
+| Eyebrow | 10px | 600 | 14px | 0.16em uppercase |
+
+All numeric content uses tabular numerals (`font-variant-numeric: tabular-nums`). Display headings enable `font-feature-settings: "ss01", "cv11", "kern"`.
+
+## Color
+
+The canonical tokens follow the shadcn OKLCH neutral palette. Nerd-specific status colors are layered on top.
+
+### Light theme
 
 ```css
 :root {
-  --color-window: #f4f6f8;
-  --color-sidebar: #edf1f4;
-  --color-surface: #ffffff;
-  --color-surface-raised: #ffffff;
-  --color-surface-hover: #f0f4f7;
-  --color-surface-selected: #e5f0f7;
-  --color-border: #d8e0e6;
-  --color-border-strong: #bcc8d1;
-  --color-text: #17212b;
-  --color-text-muted: #5f6f7d;
-  --color-text-faint: #8795a1;
-  --color-accent: #087ea4;
-  --color-accent-hover: #066b8d;
-  --color-accent-soft: #dff3fa;
-  --color-success: #16845b;
-  --color-success-soft: #def5e9;
-  --color-warning: #a86100;
-  --color-warning-soft: #fff0d2;
-  --color-danger: #c9363e;
-  --color-danger-soft: #fde6e8;
-  --color-info: #356fd6;
-  --color-info-soft: #e3edff;
-  --color-log: #111820;
-  --color-log-text: #d7e1e8;
+  --background:              oklch(1 0 0);
+  --foreground:              oklch(0.153 0.006 107.1);
+  --card:                    oklch(1 0 0);
+  --card-foreground:         oklch(0.153 0.006 107.1);
+  --popover:                 oklch(1 0 0);
+  --popover-foreground:      oklch(0.153 0.006 107.1);
+  --primary:                 oklch(0.841 0.238 128.85);
+  --primary-foreground:      oklch(0.405 0.101 131.063);
+  --secondary:               oklch(0.967 0.001 286.375);
+  --secondary-foreground:    oklch(0.21 0.006 285.885);
+  --muted:                   oklch(0.966 0.005 106.5);
+  --muted-foreground:        oklch(0.58 0.031 107.3);
+  --accent:                  oklch(0.966 0.005 106.5);
+  --accent-foreground:       oklch(0.228 0.013 107.4);
+  --destructive:             oklch(0.577 0.245 27.325);
+  --border:                  oklch(0.93 0.007 106.5);
+  --input:                   oklch(0.93 0.007 106.5);
+  --ring:                    oklch(0.737 0.021 106.9);
+  --chart-1:                 oklch(0.845 0.143 164.978);
+  --chart-2:                 oklch(0.696 0.17 162.48);
+  --chart-3:                 oklch(0.596 0.145 163.225);
+  --chart-4:                 oklch(0.508 0.118 165.612);
+  --chart-5:                 oklch(0.432 0.095 166.913);
+  --sidebar:                 oklch(0.988 0.003 106.5);
+  --sidebar-foreground:      oklch(0.153 0.006 107.1);
+  --sidebar-primary:         oklch(0.648 0.2 131.684);
+  --sidebar-primary-foreground: oklch(0.986 0.031 120.757);
+  --sidebar-accent:          oklch(0.966 0.005 106.5);
+  --sidebar-accent-foreground: oklch(0.228 0.013 107.4);
+  --sidebar-border:          oklch(0.93 0.007 106.5);
+  --sidebar-ring:            oklch(0.737 0.021 106.9);
+
+  /* Nerd status extensions */
+  --color-success:           oklch(0.768 0.16 145);
+  --color-success-soft:      oklch(0.967 0.02 145);
+  --color-warning:           oklch(0.78 0.16 80);
+  --color-warning-soft:      oklch(0.967 0.02 80);
+  --color-danger:            oklch(0.628 0.245 27);
+  --color-danger-soft:       oklch(0.967 0.02 27);
+  --color-info:              oklch(0.6 0.18 250);
+  --color-info-soft:         oklch(0.967 0.02 250);
+  --color-log:               oklch(0.13 0.005 107);
+  --color-log-text:          oklch(0.92 0.005 106);
 }
 ```
 
-## Dark Theme
+### Dark theme
 
 ```css
-[data-theme="dark"] {
-  --color-window: #11171d;
-  --color-sidebar: #161e25;
-  --color-surface: #1b242c;
-  --color-surface-raised: #202b34;
-  --color-surface-hover: #26333d;
-  --color-surface-selected: #173849;
-  --color-border: #2f3d47;
-  --color-border-strong: #465761;
-  --color-text: #edf3f6;
-  --color-text-muted: #a8b5bd;
-  --color-text-faint: #768691;
-  --color-accent: #55b9dc;
-  --color-accent-hover: #72c7e4;
-  --color-accent-soft: #173849;
-  --color-success: #55c995;
-  --color-success-soft: #173a2d;
-  --color-warning: #efb45a;
-  --color-warning-soft: #44331d;
-  --color-danger: #f1777d;
-  --color-danger-soft: #482429;
-  --color-info: #7fa7f5;
-  --color-info-soft: #22365b;
-  --color-log: #0c1116;
-  --color-log-text: #d7e1e8;
+.dark {
+  --background:              oklch(0.153 0.006 107.1);
+  --foreground:              oklch(0.988 0.003 106.5);
+  --card:                    oklch(0.228 0.013 107.4);
+  --card-foreground:         oklch(0.988 0.003 106.5);
+  --popover:                 oklch(0.228 0.013 107.4);
+  --popover-foreground:      oklch(0.988 0.003 106.5);
+  --primary:                 oklch(0.768 0.233 130.85);
+  --primary-foreground:      oklch(0.405 0.101 131.063);
+  --secondary:               oklch(0.274 0.006 286.033);
+  --secondary-foreground:    oklch(0.985 0 0);
+  --muted:                   oklch(0.286 0.016 107.4);
+  --muted-foreground:        oklch(0.737 0.021 106.9);
+  --accent:                  oklch(0.286 0.016 107.4);
+  --accent-foreground:       oklch(0.988 0.003 106.5);
+  --destructive:             oklch(0.704 0.191 22.216);
+  --border:                  oklch(1 0 0 / 10%);
+  --input:                   oklch(1 0 0 / 15%);
+  --ring:                    oklch(0.58 0.031 107.3);
+  --chart-1:                 oklch(0.845 0.143 164.978);
+  --chart-2:                 oklch(0.696 0.17 162.48);
+  --chart-3:                 oklch(0.596 0.145 163.225);
+  --chart-4:                 oklch(0.508 0.118 165.612);
+  --chart-5:                 oklch(0.432 0.095 166.913);
+  --sidebar:                 oklch(0.228 0.013 107.4);
+  --sidebar-foreground:      oklch(0.988 0.003 106.5);
+  --sidebar-primary:         oklch(0.768 0.233 130.85);
+  --sidebar-primary-foreground: oklch(0.274 0.072 132.109);
+  --sidebar-accent:          oklch(0.286 0.016 107.4);
+  --sidebar-accent-foreground: oklch(0.988 0.003 106.5);
+  --sidebar-border:          oklch(1 0 0 / 10%);
+  --sidebar-ring:            oklch(0.58 0.031 107.3);
+
+  --color-success:           oklch(0.748 0.18 145);
+  --color-success-soft:      oklch(0.28 0.05 145);
+  --color-warning:           oklch(0.798 0.18 80);
+  --color-warning-soft:      oklch(0.28 0.05 80);
+  --color-danger:            oklch(0.704 0.21 22);
+  --color-danger-soft:       oklch(0.28 0.08 22);
+  --color-info:              oklch(0.66 0.18 250);
+  --color-info-soft:         oklch(0.28 0.05 250);
+  --color-log:               oklch(0.1 0.005 107);
+  --color-log-text:          oklch(0.92 0.005 106);
 }
 ```
 
-## Shape And Spacing
+### Dark theme activation
+
+Dark theme is activated via `.dark` class on `<html>`, set by `ThemeProvider` from system preference or user override. No `[data-theme="dark"]` selector.
+
+### Status mapping
+
+| State | Token |
+|---|---|
+| Running, healthy, ready, verified | success |
+| Starting, installing, waiting, info | info |
+| Stopped, disabled, idle | muted-foreground |
+| Degraded, conflict, foreign listener | warning |
+| Failed, crashed, destructive | destructive |
+
+Status is always color + text or icon. Never color alone.
+
+## Shape
 
 ```css
---radius-sm: 4px;
---radius-md: 7px;
---radius-lg: 10px;
---radius-pill: 999px;
-
---space-1: 4px;
---space-2: 8px;
---space-3: 12px;
---space-4: 16px;
---space-5: 20px;
---space-6: 24px;
+--radius-sm:   calc(var(--radius) - 4px);   /* default 6.25px */
+--radius-md:   calc(var(--radius) - 2px);   /* default 8.25px */
+--radius-lg:   var(--radius);               /* default 10px */
+--radius-xl:   calc(var(--radius) + 4px);   /* default 14px */
+--radius-pill: 9999px;
 ```
+
+The shadcn `--radius` is `0.625rem` (10px) by default.
+
+## Spacing
+
+Tailwind base unit `4px`. Use semantic Tailwind spacing utilities (`gap-2`, `px-4`, `py-6`, `space-y-3`).
 
 ## Elevation
 
+Cards inside primary content use borders, not shadows. Shadows are reserved for flyouts, menus, dialogs, and detached overlays.
+
 ```css
---shadow-flyout: 0 8px 28px rgb(0 0 0 / 0.18);
---shadow-dialog: 0 18px 60px rgb(0 0 0 / 0.28);
+--shadow-flyout: 0 1px 2px rgb(0 0 0 / 0.06), 0 12px 32px rgb(0 0 0 / 0.08);
+--shadow-dialog: 0 4px 12px rgb(0 0 0 / 0.10), 0 32px 80px rgb(0 0 0 / 0.16);
 ```
 
-Cards inside primary content usually use borders, not shadows. Shadows are reserved for flyouts, menus, dialogs, and detached overlays.
+Dark theme multipliers apply automatically.
 
-## Component Measurements
+## Component measurements
 
 | Element | Measurement |
 |---|---:|
 | Title bar | 40px |
-| Sidebar | 220px |
-| Compact sidebar | 56px |
-| Toolbar | 44px |
-| Input/button default | 32px |
-| Input/button compact | 28px |
+| Sidebar expanded | 220px |
+| Sidebar collapsed (icon rail) | 52px |
+| Top toolbar | 64px |
+| Section header | 40px |
+| Input / button default | 32px |
+| Input / button compact | 28px |
 | Table row | 38px |
+| List row (comfortable) | 44px |
 | Status dot | 8px |
-| Content max width | none; desktop window owns width |
+| Minimum window width | 960px |
 
-## Status Mapping
+## Motion
 
-| State | Token |
-|---|---|
-| Running, healthy, ready | success |
-| Starting, installing, waiting | info |
-| Stopped, disabled | text-muted |
-| Degraded, conflict | warning |
-| Failed, crashed | danger |
+```css
+--motion-fast:    100ms ease-out;
+--motion-default: 150ms ease-out;
+--motion-slow:    200ms ease-out;
+```
+
+Motion respects `prefers-reduced-motion`. Status dots pulse only on live states (running, active sync). Hover transitions are color and opacity only.
 
 ## Invariants
 
-- Never use hardcoded hex values in React components.
-- Never use raw Tailwind color utilities such as `bg-blue-500`.
-- Logs and code use the mono font.
-- Preserve native-looking focus rings and keyboard visibility.
-- Theme follows system by default and may be overridden by user.
-- Motion duration stays between 100 and 180 ms and respects reduced motion.
+- Never hardcode hex values or raw OKLCH triplets in components. Tokens only.
+- Never use raw Tailwind palette utilities such as `bg-blue-500`. Tokens only.
+- Logs, paths, versions, ports, and timestamps use the mono font.
+- Focus rings are visible, 2px, ring color.
+- Theme follows system by default; user override available.
+- All numerics use tabular numerals.
+- Components consume `--background`, `--foreground`, `--card`, `--primary`, `--secondary`, `--muted`, `--accent`, `--destructive`, `--border`, `--input`, `--ring`, `--sidebar-*`, and `--color-*` (status). No other CSS variables are allowed.
+
+## shadcn Primitive → Token Map
+
+shadcn primitives in `src/components/ui/` map to tokens as follows:
+
+| shadcn utility class | Token source |
+|---|---|
+| `bg-background`, `text-foreground` | `--background`, `--foreground` |
+| `bg-card`, `text-card-foreground` | `--card`, `--card-foreground` |
+| `bg-popover`, `text-popover-foreground` | `--popover`, `--popover-foreground` |
+| `bg-primary`, `text-primary-foreground` | `--primary`, `--primary-foreground` |
+| `bg-secondary`, `text-secondary-foreground` | `--secondary`, `--secondary-foreground` |
+| `bg-muted`, `text-muted-foreground` | `--muted`, `--muted-foreground` |
+| `bg-accent`, `text-accent-foreground` | `--accent`, `--accent-foreground` |
+| `bg-destructive` | `--destructive` |
+| `border-border` | `--border` (use `/40` opacity for hairline) |
+| `border-input` | `--input` |
+| `ring-ring` | `--ring` |
+| `bg-sidebar`, `text-sidebar-foreground` | `--sidebar`, `--sidebar-foreground` |
+| `bg-sidebar-primary` | `--sidebar-primary` |
+| `bg-sidebar-accent` | `--sidebar-accent` |
+| `border-sidebar-border` | `--sidebar-border` |
+| `bg-success`, `bg-warning`, `bg-danger`, `bg-info` (Nerd status extensions) | `--color-success`, `--color-warning`, `--color-danger`, `--color-info` |
+| `bg-{success,warning,danger,info}-soft` | `--color-{success,warning,danger,info}-soft` |
+| `bg-log`, `text-log-text` | `--color-log`, `--color-log-text` |
