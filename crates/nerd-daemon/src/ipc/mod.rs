@@ -12,7 +12,8 @@ use nerd_core::{
     ipc::{
         DaemonHealth, DaemonIdentity, DataPaths, ErrorCode, ErrorResponse, HandshakeResponse,
         HealthComponent, HealthComponentName, HealthStatus, ProcessResources, Request,
-        RequestEnvelope, Response, ResponseEnvelope, StatusResponse,
+        RequestEnvelope, Response, ResponseEnvelope, RuntimeInstallResponse, RuntimeListResponse,
+        RuntimeRemoveResponse, RuntimeSetDefaultResponse, StatusResponse,
     },
 };
 use serde::Deserialize;
@@ -27,9 +28,11 @@ use uuid::Uuid;
 
 use crate::{
     logging::LogHealthHandle,
+    node::NodeManager,
     paths::AppPaths,
     setup::{NetworkRuntime, NetworkSetup, SetupError},
-    state::{SUPPORTED_SCHEMA_VERSION, StateClient},
+    state::{RuntimeKind, RuntimeRecord, SUPPORTED_SCHEMA_VERSION, StateClient},
+    version::parse_spec,
     windows::{self, SecurityDescriptor},
 };
 
@@ -50,6 +53,7 @@ pub struct DaemonContext {
     state: StateClient,
     logging: LogHealthHandle,
     network: NetworkSetup,
+    node: NodeManager,
 }
 
 impl DaemonContext {
@@ -64,9 +68,10 @@ impl DaemonContext {
             instance_id,
             started_at: Instant::now(),
             paths: paths.clone(),
-            state,
+            state: state.clone(),
             logging,
-            network: NetworkSetup::new(paths, runtime),
+            network: NetworkSetup::new(paths.clone(), runtime),
+            node: NodeManager::new(paths, state),
         }
     }
 
@@ -396,6 +401,55 @@ async fn handle_connection(
                 Ok(response) => Response::NetworkStatus(response),
                 Err(error) => Response::Error(network_error(error)),
             },
+            Request::RuntimeInstall(request) => {
+                match context.node.install(&request.version).await {
+                    Ok(version) => Response::RuntimeInstall(RuntimeInstallResponse {
+                        installed: true,
+                        version,
+                    }),
+                    Err(error) => Response::Error(node_error(error)),
+                }
+            }
+            Request::RuntimeList(_) => match context.node.list().await {
+                Ok(runtimes) => Response::RuntimeList(RuntimeListResponse {
+                    runtimes: runtimes.into_iter().map(into_runtime_info).collect(),
+                }),
+                Err(error) => Response::Error(node_error(error)),
+            },
+            Request::RuntimeRemove(request) => {
+                match context.node.uninstall(request.runtime_id).await {
+                    Ok(removed) => Response::RuntimeRemove(RuntimeRemoveResponse {
+                        removed,
+                        was_managed: removed,
+                    }),
+                    Err(error) => Response::Error(node_error(error)),
+                }
+            }
+            Request::RuntimeSetDefault(request) => {
+                let spec = parse_spec(&request.version).ok_or_else(|| {
+                    ErrorResponse::new(
+                        ErrorCode::InvalidRequest,
+                        "invalid node version declaration",
+                        false,
+                    )
+                });
+                match spec {
+                    Ok(spec) => match context.node.resolve(&spec).await {
+                        Ok(version) => {
+                            let _ = context
+                                .state
+                                .set_setting(
+                                    "runtime.default".to_owned(),
+                                    serde_json::json!({ "version": version }).to_string(),
+                                )
+                                .await;
+                            Response::RuntimeSetDefault(RuntimeSetDefaultResponse { version })
+                        }
+                        Err(error) => Response::Error(node_error(error)),
+                    },
+                    Err(error) => Response::Error(error),
+                }
+            }
             Request::Handshake(_) => Response::Error(ErrorResponse::new(
                 ErrorCode::InvalidRequest,
                 "handshake is already complete",
@@ -508,6 +562,29 @@ fn create_listener(
 fn network_error(error: SetupError) -> ErrorResponse {
     let message = error.to_string();
     ErrorResponse::new(ErrorCode::Internal, message, false)
+}
+
+fn node_error(error: crate::node::NodeError) -> ErrorResponse {
+    let message = error.to_string();
+    ErrorResponse::new(ErrorCode::Internal, message, false)
+}
+
+fn into_runtime_info(record: RuntimeRecord) -> nerd_core::runtime::RuntimeInfo {
+    nerd_core::runtime::RuntimeInfo {
+        runtime_id: record.runtime_id,
+        kind: match record.kind {
+            RuntimeKind::Managed => nerd_core::runtime::RuntimeKind::Managed,
+            RuntimeKind::External => nerd_core::runtime::RuntimeKind::External,
+        },
+        tool: record.tool,
+        version: record.version,
+        executable_path: record.executable_path,
+        architecture: record.architecture,
+        status: match record.status {
+            crate::state::RuntimeStatus::Ready => nerd_core::runtime::RuntimeStatus::Ready,
+            crate::state::RuntimeStatus::Degraded => nerd_core::runtime::RuntimeStatus::Degraded,
+        },
+    }
 }
 
 fn worse_health(left: HealthStatus, right: HealthStatus) -> HealthStatus {

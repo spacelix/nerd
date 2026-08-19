@@ -24,6 +24,10 @@ pub enum Request {
     NetworkUninstall(NetworkUninstallRequest),
     NetworkRepair(NetworkRepairRequest),
     NetworkStatus(NetworkStatusRequest),
+    RuntimeInstall(RuntimeInstallRequest),
+    RuntimeList(RuntimeListRequest),
+    RuntimeRemove(RuntimeRemoveRequest),
+    RuntimeSetDefault(RuntimeSetDefaultRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -72,6 +76,10 @@ pub enum Response {
     NetworkUninstall(NetworkUninstallResponse),
     NetworkRepair(NetworkRepairResponse),
     NetworkStatus(NetworkStatusResponse),
+    RuntimeInstall(RuntimeInstallResponse),
+    RuntimeList(RuntimeListResponse),
+    RuntimeRemove(RuntimeRemoveResponse),
+    RuntimeSetDefault(RuntimeSetDefaultResponse),
     Error(ErrorResponse),
 }
 
@@ -253,6 +261,56 @@ pub struct PortConflict {
     pub protocol: String,
     #[serde(deserialize_with = "positive_u32")]
     pub owning_process_id: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeInstallRequest {
+    #[serde(deserialize_with = "nonempty_string")]
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeInstallResponse {
+    pub installed: bool,
+    pub version: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeListRequest {}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeListResponse {
+    pub runtimes: Vec<crate::runtime::RuntimeInfo>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeRemoveRequest {
+    pub runtime_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeRemoveResponse {
+    pub removed: bool,
+    pub was_managed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeSetDefaultRequest {
+    #[serde(deserialize_with = "nonempty_string")]
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeSetDefaultResponse {
+    pub version: String,
 }
 
 fn positive_u16<'de, D>(deserializer: D) -> Result<u16, D::Error>

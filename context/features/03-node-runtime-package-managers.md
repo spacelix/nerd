@@ -8,6 +8,14 @@ Install, resolve, and execute multiple Node.js versions without depending on or 
 
 Users install Node versions, assign one per project, and run npm, pnpm, or Yarn with deterministic project tooling.
 
+## Decisions
+
+- **D1 Persistence**: runtime inventory lives in SQLite (`runtimes` table via schema migration). New repository methods on `StateClient`: list/register/remove/set-health.
+- **D2 Download**: `reqwest =0.13.4` + `zip =8.6.0` + `sha2 =0.11.0`. Official Node origins only. Verify SHASUMS256 checksum before extraction. Reject archive traversal. Extract to a staging directory, then atomic rename to the target version directory. Failed downloads never enter inventory.
+- **D3 Resolution**: `version.rs` parses and resolves declarations to one concrete version with a source trace (`nerd.json | nvmrc | node-version | engines | default`). Prefer an installed compatible LTS before downloading.
+- **D4 Package managers**: `node.rs` (install/resolve) plus `package_manager.rs` (npm/corepack/pnpm/yarn). npm ships with the Node distribution. pnpm/Yarn resolve through `packageManager` and run via Corepack. Node 25+ uses Nerd-managed Corepack. Child env is built by `exec.rs` with an isolated PATH.
+- **D5 Re-probe gating**: the daemon re-probes external runtimes before project launch (authoritative). Missing path, changed binary identity, incompatible architecture, or changed version marks the runtime `degraded`, blocks launch with a typed error, and offers a managed alternative.
+
 ## In Scope
 
 - Official Node release index client and cache
