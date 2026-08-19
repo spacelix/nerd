@@ -2,7 +2,7 @@ use rusqlite::{Connection, TransactionBehavior, params};
 
 use super::{StateError, StateIntegrityViolation, unix_timestamp_ms};
 
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 2;
 pub const APPLICATION_ID: u32 = 0x4E45_5244;
 
 const SCHEMA_MIGRATIONS_SQL: &str = r#"
@@ -58,6 +58,20 @@ const PROJECT_REGISTRY_SQL: &str = r#"
     ) WITHOUT ROWID;
 "#;
 
+const RUNTIMES_SQL: &str = r#"
+    CREATE TABLE runtimes (
+        runtime_id TEXT PRIMARY KEY CHECK (length(runtime_id) = 36),
+        kind TEXT NOT NULL CHECK (kind IN ('managed', 'external')),
+        tool TEXT NOT NULL CHECK (tool = 'node'),
+        version TEXT NOT NULL CHECK (length(version) BETWEEN 1 AND 32),
+        executable_path TEXT NOT NULL CHECK (length(executable_path) BETWEEN 1 AND 1024),
+        architecture TEXT NOT NULL CHECK (architecture IN ('x64', 'arm64')),
+        binary_identity TEXT NOT NULL CHECK (length(binary_identity) BETWEEN 1 AND 256),
+        status TEXT NOT NULL CHECK (status IN ('ready', 'degraded')),
+        recorded_at_unix_ms INTEGER NOT NULL CHECK (recorded_at_unix_ms >= 0)
+    ) WITHOUT ROWID;
+"#;
+
 const FOUNDATION_STATEMENTS: &[&str] = &[
     SCHEMA_MIGRATIONS_SQL,
     GLOBAL_SETTINGS_SQL,
@@ -66,11 +80,14 @@ const FOUNDATION_STATEMENTS: &[&str] = &[
     PROJECT_REGISTRY_SQL,
 ];
 
+const RUNTIMES_STATEMENTS: &[&str] = &[RUNTIMES_SQL];
+
 const EXPECTED_TABLES: &[(&str, &str)] = &[
     ("artifact_inventory", ARTIFACT_INVENTORY_SQL),
     ("global_settings", GLOBAL_SETTINGS_SQL),
     ("operation_history", OPERATION_HISTORY_SQL),
     ("project_registry", PROJECT_REGISTRY_SQL),
+    ("runtimes", RUNTIMES_SQL),
     ("schema_migrations", SCHEMA_MIGRATIONS_SQL),
 ];
 
@@ -80,11 +97,18 @@ struct Migration {
     statements: &'static [&'static str],
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "foundation_state",
-    statements: FOUNDATION_STATEMENTS,
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "foundation_state",
+        statements: FOUNDATION_STATEMENTS,
+    },
+    Migration {
+        version: 2,
+        name: "node_runtimes",
+        statements: RUNTIMES_STATEMENTS,
+    },
+];
 
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), StateError> {
     migrate_with(connection, MIGRATIONS, SUPPORTED_SCHEMA_VERSION)
@@ -437,12 +461,14 @@ mod tests {
             ))
         ));
 
-        connection
-            .execute(
-                "UPDATE schema_migrations SET fingerprint = ?1",
-                [super::migration_fingerprint(&super::MIGRATIONS[0])],
-            )
-            .expect("restore ledger");
+        for migration in super::MIGRATIONS {
+            connection
+                .execute(
+                    "UPDATE schema_migrations SET fingerprint = ?1 WHERE migration_id = ?2",
+                    rusqlite::params![super::migration_fingerprint(migration), migration.version],
+                )
+                .expect("restore ledger");
+        }
         connection
             .execute_batch("ALTER TABLE global_settings ADD COLUMN injected TEXT;")
             .expect("alter schema");

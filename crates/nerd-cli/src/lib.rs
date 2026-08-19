@@ -6,7 +6,8 @@ use nerd_core::{
     ipc::{
         ClientKind, ErrorCode, ErrorResponse, HandshakeRequest, HealthStatus, NetworkRepairRequest,
         NetworkSetupRequest, NetworkStatusRequest, NetworkUninstallRequest, Request,
-        RequestEnvelope, Response, ResponseEnvelope, StatusRequest, StatusResponse,
+        RequestEnvelope, Response, ResponseEnvelope, RuntimeInstallRequest, RuntimeListRequest,
+        RuntimeRemoveRequest, RuntimeSetDefaultRequest, StatusRequest, StatusResponse,
     },
 };
 use tokio::{
@@ -43,11 +44,94 @@ pub fn run_from_env() -> i32 {
                 error.exit_code()
             }
         },
+        Ok(Command::Runtime { action, arg }) => match run_runtime(action, arg) {
+            Ok(()) => 0,
+            Err(error) => {
+                eprintln!("nerd: {error}");
+                error.exit_code()
+            }
+        },
         Err(error) => {
             eprintln!("nerd: {error}");
-            eprintln!("usage: nerd <status|network <setup|uninstall|repair|status>|--version>");
+            eprintln!(
+                "usage: nerd <status|network <setup|uninstall|repair|status>|runtime <install <ver>|list|remove <id>|set-default <ver>>|--version>"
+            );
             error.exit_code()
         }
+    }
+}
+
+fn run_runtime(action: RuntimeAction, arg: Option<String>) -> Result<(), CliError> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(CliError::Runtime)?;
+    runtime.block_on(async move {
+        let mut connection = connect().await?;
+        let request = match action {
+            RuntimeAction::Install => {
+                let version = arg.ok_or(CliError::Usage)?;
+                Request::RuntimeInstall(RuntimeInstallRequest { version })
+            }
+            RuntimeAction::List => Request::RuntimeList(RuntimeListRequest {}),
+            RuntimeAction::Remove => {
+                let id = arg.ok_or(CliError::Usage)?;
+                let runtime_id = uuid::Uuid::parse_str(&id).map_err(|_| CliError::Usage)?;
+                Request::RuntimeRemove(RuntimeRemoveRequest { runtime_id })
+            }
+            RuntimeAction::SetDefault => {
+                let version = arg.ok_or(CliError::Usage)?;
+                Request::RuntimeSetDefault(RuntimeSetDefaultRequest { version })
+            }
+        };
+        let response = timeout(
+            REQUEST_TIMEOUT,
+            exchange_network(&mut connection.client, request),
+        )
+        .await
+        .map_err(|_| CliError::Timeout)??;
+        print_runtime(&response);
+        Ok(())
+    })
+}
+
+fn print_runtime(response: &Response) {
+    match response {
+        Response::RuntimeInstall(result) => {
+            if result.installed {
+                println!("Installed Node {}", result.version);
+            } else {
+                println!("Node {} already installed", result.version);
+            }
+        }
+        Response::RuntimeList(result) => {
+            if result.runtimes.is_empty() {
+                println!("No runtimes installed.");
+            }
+            for runtime in &result.runtimes {
+                println!(
+                    "{:<12} {:<9} {:<8} {}",
+                    runtime.kind_str(),
+                    runtime.version,
+                    runtime.status_str(),
+                    runtime.executable_path
+                );
+            }
+        }
+        Response::RuntimeRemove(result) => {
+            if result.removed {
+                println!("Removed runtime.");
+            } else {
+                println!("Runtime not found or not managed.");
+            }
+        }
+        Response::RuntimeSetDefault(result) => {
+            println!("Default Node set to {}", result.version);
+        }
+        Response::Error(error) => {
+            println!("Runtime request rejected: {}", error.message);
+        }
+        _ => println!("Unexpected runtime response."),
     }
 }
 
@@ -417,15 +501,51 @@ fn parse_command(mut arguments: impl Iterator<Item = OsString>) -> Result<Comman
             let action = NetworkAction::parse(&action.to_string_lossy())?;
             Ok(Command::Network { action })
         }
+        "runtime" => {
+            let action = arguments.next().ok_or(CliError::Usage)?;
+            let action = RuntimeAction::parse(&action.to_string_lossy())?;
+            let arg = arguments.next();
+            if arguments.next().is_some() {
+                return Err(CliError::Usage);
+            }
+            let arg = arg.map(|value| value.to_string_lossy().into_owned());
+            Ok(Command::Runtime { action, arg })
+        }
         _ => Err(CliError::Usage),
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum Command {
     Status,
     Version,
-    Network { action: NetworkAction },
+    Network {
+        action: NetworkAction,
+    },
+    Runtime {
+        action: RuntimeAction,
+        arg: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeAction {
+    Install,
+    List,
+    Remove,
+    SetDefault,
+}
+
+impl RuntimeAction {
+    fn parse(value: &str) -> Result<Self, CliError> {
+        match value {
+            "install" => Ok(Self::Install),
+            "list" => Ok(Self::List),
+            "remove" => Ok(Self::Remove),
+            "set-default" => Ok(Self::SetDefault),
+            _ => Err(CliError::Usage),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
