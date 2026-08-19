@@ -1,5 +1,6 @@
 pub mod codec;
 pub mod ipc;
+pub mod runtime;
 pub mod setup;
 
 pub const APPLICATION_VERSION: &str = env!("CARGO_PKG_VERSION");

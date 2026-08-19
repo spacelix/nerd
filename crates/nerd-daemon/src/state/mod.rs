@@ -168,6 +168,36 @@ impl StateClient {
         .await
     }
 
+    pub async fn list_runtimes(&self) -> Result<Vec<RuntimeRecord>, StateError> {
+        self.request(StateCommand::ListRuntimes).await
+    }
+
+    pub async fn register_runtime(&self, runtime: &RuntimeRecord) -> Result<(), StateError> {
+        self.request(|reply| StateCommand::RegisterRuntime {
+            runtime: runtime.clone(),
+            reply,
+        })
+        .await
+    }
+
+    pub async fn set_runtime_status(
+        &self,
+        runtime_id: Uuid,
+        status: RuntimeStatus,
+    ) -> Result<(), StateError> {
+        self.request(|reply| StateCommand::SetRuntimeStatus {
+            runtime_id,
+            status,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn remove_runtime(&self, runtime_id: Uuid) -> Result<(), StateError> {
+        self.request(|reply| StateCommand::RemoveRuntime { runtime_id, reply })
+            .await
+    }
+
     pub async fn finish_operation(
         &self,
         operation_id: Uuid,
@@ -201,6 +231,48 @@ pub struct StateHealth {
     pub foreign_keys_enabled: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeRecord {
+    pub runtime_id: Uuid,
+    pub kind: RuntimeKind,
+    pub tool: String,
+    pub version: String,
+    pub executable_path: String,
+    pub architecture: String,
+    pub binary_identity: String,
+    pub status: RuntimeStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeKind {
+    Managed,
+    External,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeStatus {
+    Ready,
+    Degraded,
+}
+
+impl RuntimeKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Managed => "managed",
+            Self::External => "external",
+        }
+    }
+}
+
+impl RuntimeStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Degraded => "degraded",
+        }
+    }
+}
+
 enum StateCommand {
     Health(oneshot::Sender<Result<StateHealth, StateError>>),
     GetSetting {
@@ -221,6 +293,20 @@ enum StateCommand {
     FinishOperation {
         operation_id: Uuid,
         succeeded: bool,
+        reply: oneshot::Sender<Result<(), StateError>>,
+    },
+    ListRuntimes(oneshot::Sender<Result<Vec<RuntimeRecord>, StateError>>),
+    RegisterRuntime {
+        runtime: RuntimeRecord,
+        reply: oneshot::Sender<Result<(), StateError>>,
+    },
+    SetRuntimeStatus {
+        runtime_id: Uuid,
+        status: RuntimeStatus,
+        reply: oneshot::Sender<Result<(), StateError>>,
+    },
+    RemoveRuntime {
+        runtime_id: Uuid,
         reply: oneshot::Sender<Result<(), StateError>>,
     },
     Shutdown(SyncSender<Result<(), StateError>>),
@@ -281,6 +367,22 @@ fn run_worker(connection: &Connection, receiver: mpsc::Receiver<StateCommand>) {
                 reply,
             } => {
                 let _ = reply.send(finish_operation(connection, operation_id, succeeded));
+            }
+            StateCommand::ListRuntimes(reply) => {
+                let _ = reply.send(list_runtimes(connection));
+            }
+            StateCommand::RegisterRuntime { runtime, reply } => {
+                let _ = reply.send(register_runtime(connection, &runtime));
+            }
+            StateCommand::SetRuntimeStatus {
+                runtime_id,
+                status,
+                reply,
+            } => {
+                let _ = reply.send(set_runtime_status(connection, runtime_id, status));
+            }
+            StateCommand::RemoveRuntime { runtime_id, reply } => {
+                let _ = reply.send(remove_runtime(connection, runtime_id));
             }
             StateCommand::Shutdown(reply) => {
                 let result = connection
@@ -387,6 +489,102 @@ fn finish_operation(
         return Err(StateError::OperationNotRunning(operation_id));
     }
     Ok(())
+}
+
+fn list_runtimes(connection: &Connection) -> Result<Vec<RuntimeRecord>, StateError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT runtime_id, kind, tool, version, executable_path, architecture, \
+                    binary_identity, status \
+             FROM runtimes ORDER BY tool, version",
+        )
+        .map_err(StateError::Repository)?;
+    let rows = statement
+        .query_map([], |row| {
+            let runtime_id: String = row.get(0)?;
+            Ok(RuntimeRecord {
+                runtime_id: Uuid::parse_str(&runtime_id)
+                    .map_err(|_| rusqlite::Error::InvalidColumnName("runtime_id".to_owned()))?,
+                kind: runtime_kind_from_str(&row.get::<_, String>(1)?)
+                    .ok_or_else(|| rusqlite::Error::InvalidColumnName("kind".to_owned()))?,
+                tool: row.get(2)?,
+                version: row.get(3)?,
+                executable_path: row.get(4)?,
+                architecture: row.get(5)?,
+                binary_identity: row.get(6)?,
+                status: runtime_status_from_str(&row.get::<_, String>(7)?)
+                    .ok_or_else(|| rusqlite::Error::InvalidColumnName("status".to_owned()))?,
+            })
+        })
+        .map_err(StateError::Repository)?;
+    rows.collect::<Result<_, _>>()
+        .map_err(StateError::Repository)
+}
+
+fn register_runtime(connection: &Connection, runtime: &RuntimeRecord) -> Result<(), StateError> {
+    connection
+        .execute(
+            "INSERT INTO runtimes (runtime_id, kind, tool, version, executable_path, \
+                    architecture, binary_identity, status, recorded_at_unix_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+             ON CONFLICT(runtime_id) DO UPDATE SET \
+             executable_path = excluded.executable_path, \
+             binary_identity = excluded.binary_identity, \
+             status = excluded.status",
+            params![
+                runtime.runtime_id.to_string(),
+                runtime.kind.as_str(),
+                runtime.tool,
+                runtime.version,
+                runtime.executable_path,
+                runtime.architecture,
+                runtime.binary_identity,
+                runtime.status.as_str(),
+                unix_timestamp_ms()?
+            ],
+        )
+        .map_err(StateError::Repository)?;
+    Ok(())
+}
+
+fn set_runtime_status(
+    connection: &Connection,
+    runtime_id: Uuid,
+    status: RuntimeStatus,
+) -> Result<(), StateError> {
+    connection
+        .execute(
+            "UPDATE runtimes SET status = ?2 WHERE runtime_id = ?1",
+            params![runtime_id.to_string(), status.as_str()],
+        )
+        .map_err(StateError::Repository)?;
+    Ok(())
+}
+
+fn remove_runtime(connection: &Connection, runtime_id: Uuid) -> Result<(), StateError> {
+    connection
+        .execute(
+            "DELETE FROM runtimes WHERE runtime_id = ?1",
+            [runtime_id.to_string()],
+        )
+        .map_err(StateError::Repository)?;
+    Ok(())
+}
+
+fn runtime_kind_from_str(value: &str) -> Option<RuntimeKind> {
+    match value {
+        "managed" => Some(RuntimeKind::Managed),
+        "external" => Some(RuntimeKind::External),
+        _ => None,
+    }
+}
+
+fn runtime_status_from_str(value: &str) -> Option<RuntimeStatus> {
+    match value {
+        "ready" => Some(RuntimeStatus::Ready),
+        "degraded" => Some(RuntimeStatus::Degraded),
+        _ => None,
+    }
 }
 
 fn validate_key(value: &str) -> Result<(), StateError> {
@@ -570,7 +768,9 @@ mod tests {
     use rusqlite::Connection;
     use uuid::Uuid;
 
-    use super::{SUPPORTED_SCHEMA_VERSION, StateError, StateStore};
+    use super::{
+        RuntimeKind, RuntimeRecord, RuntimeStatus, SUPPORTED_SCHEMA_VERSION, StateError, StateStore,
+    };
 
     #[test]
     fn worker_migrates_serves_repositories_and_releases_database() {
@@ -650,6 +850,56 @@ mod tests {
                     .await,
                 Err(StateError::InvalidJson)
             ));
+        });
+        drop(runtime);
+        store.shutdown().expect("shutdown state store");
+    }
+
+    #[test]
+    fn runtime_repository_registers_lists_degrades_and_removes() {
+        let fixture = TempFixture::new("state-runtimes");
+        let store = StateStore::open(&fixture.path.join("state.db")).expect("open state store");
+        let client = store.client();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime");
+
+        runtime.block_on(async {
+            let runtime_id = Uuid::new_v4();
+            let record = RuntimeRecord {
+                runtime_id,
+                kind: RuntimeKind::External,
+                tool: "node".to_owned(),
+                version: "20.11.1".to_owned(),
+                executable_path: r"C:\node\node.exe".to_owned(),
+                architecture: "x64".to_owned(),
+                binary_identity: "abc123".to_owned(),
+                status: RuntimeStatus::Ready,
+            };
+            client
+                .register_runtime(&record)
+                .await
+                .expect("register runtime");
+
+            let listed = client.list_runtimes().await.expect("list runtimes");
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].runtime_id, runtime_id);
+            assert_eq!(listed[0].version, "20.11.1");
+
+            client
+                .set_runtime_status(runtime_id, RuntimeStatus::Degraded)
+                .await
+                .expect("degrade runtime");
+            let listed = client.list_runtimes().await.expect("list runtimes");
+            assert_eq!(listed[0].status, RuntimeStatus::Degraded);
+
+            client
+                .remove_runtime(runtime_id)
+                .await
+                .expect("remove runtime");
+            let listed = client.list_runtimes().await.expect("list runtimes");
+            assert!(listed.is_empty());
         });
         drop(runtime);
         store.shutdown().expect("shutdown state store");

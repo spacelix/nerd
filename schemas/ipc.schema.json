@@ -88,6 +88,42 @@
             "type": { "const": "network_status" },
             "payload": { "$ref": "#/$defs/networkStatusRequest" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_install" },
+            "payload": { "$ref": "#/$defs/runtimeInstallRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_list" },
+            "payload": { "$ref": "#/$defs/runtimeListRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_remove" },
+            "payload": { "$ref": "#/$defs/runtimeRemoveRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_set_default" },
+            "payload": { "$ref": "#/$defs/runtimeSetDefaultRequest" }
+          }
         }
       ]
     },
@@ -131,6 +167,35 @@
       "type": "object",
       "additionalProperties": false,
       "maxProperties": 0
+    },
+    "runtimeInstallRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runtimeListRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "runtimeRemoveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtimeId"],
+      "properties": {
+        "runtimeId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "runtimeSetDefaultRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 }
+      }
     },
     "responseEnvelope": {
       "type": "object",
@@ -196,6 +261,42 @@
           "properties": {
             "type": { "const": "network_status" },
             "payload": { "$ref": "#/$defs/networkStatusResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_install" },
+            "payload": { "$ref": "#/$defs/runtimeInstallResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_list" },
+            "payload": { "$ref": "#/$defs/runtimeListResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_remove" },
+            "payload": { "$ref": "#/$defs/runtimeRemoveResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_set_default" },
+            "payload": { "$ref": "#/$defs/runtimeSetDefaultResponse" }
           }
         },
         {
@@ -347,6 +448,65 @@
         "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "protocol": { "type": "string", "minLength": 1 },
         "owningProcessId": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+      }
+    },
+    "runtimeInstallResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installed", "version"],
+      "properties": {
+        "installed": { "type": "boolean" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runtimeListResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtimes"],
+      "properties": {
+        "runtimes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/runtimeInfo" }
+        }
+      }
+    },
+    "runtimeRemoveResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["removed", "wasManaged"],
+      "properties": {
+        "removed": { "type": "boolean" },
+        "wasManaged": { "type": "boolean" }
+      }
+    },
+    "runtimeSetDefaultResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runtimeInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtimeId",
+        "kind",
+        "tool",
+        "version",
+        "executablePath",
+        "architecture",
+        "status"
+      ],
+      "properties": {
+        "runtimeId": { "$ref": "#/$defs/uuid" },
+        "kind": { "enum": ["managed", "external"] },
+        "tool": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "executablePath": { "type": "string", "minLength": 1 },
+        "architecture": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["ready", "degraded"] }
       }
     },
     "errorResponse": {

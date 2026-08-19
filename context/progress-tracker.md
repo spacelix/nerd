@@ -4,10 +4,10 @@ Update this file whenever feature state changes. Only one feature may be `in pro
 
 ## Current Status
 
-- Phase: Phase 2 - Windows Network Foundation
-- In progress: None (Feature 01 and 02 complete)
+- Phase: Phase 3 - Runtimes and Package Managers
+- In progress: Feature 03 - Node runtime and package managers
 - Last completed: Feature 02 - Windows DNS, HTTPS, and privilege setup
-- Next: Start Feature 03 (Node runtime and package managers)
+- Next: Complete Feature 03 acceptance, then start Feature 04
 
 ## Features
 
@@ -15,7 +15,7 @@ Update this file whenever feature state changes. Only one feature may be `in pro
 |---|---|---|---|
 | 01 | Foundation, daemon, state, IPC | `features/01-foundation-daemon-ipc.md` | complete |
 | 02 | Windows DNS, HTTPS, privilege setup | `features/02-windows-dns-https.md` | complete |
-| 03 | Node runtime and package managers | `features/03-node-runtime-package-managers.md` | planned |
+| 03 | Node runtime and package managers | `features/03-node-runtime-package-managers.md` | in progress |
 | 04 | Project discovery and configuration | `features/04-project-discovery-config.md` | planned |
 | 05 | Frameworks and process supervision | `features/05-frameworks-process-supervision.md` | planned |
 | 06 | Reverse proxy | `features/06-reverse-proxy.md` | planned |
