@@ -295,6 +295,63 @@ Do not assume Linux archive layouts or commands apply to Windows.
 
 See ADR 006 before any Feature 10 dependency or adapter work.
 
+## Prototype V2 Dependencies
+
+`prototype2/` is a browser-only exploration of a redesigned UI for the Nerd desktop. It is **not** part of the production Nerd stack. Dependencies below are approved only for use inside `prototype2/`. They never enter `apps/desktop/`, the Rust workspace, the installer, or the updater.
+
+Versions are recorded as the exact installed version at the time the dependency was first added. Updating one requires reading the new official documentation and rerunning all v2 verification steps.
+
+### react-resizable-panels
+
+- Version policy: `^3.0.4`
+- Feature: N0 three-pane shell (Project Rail, Center, Inspector Rail). Resizable, collapsible, persistent layout.
+- Why needed: production-grade resizable panels with keyboard accessibility, persisted layout via `autoSaveId`, and predictable behavior. Avoids reinventing resize logic and edge handling.
+- Official docs: https://react-resizable-panels.vercel.app/
+- Security boundary: no IPC, no OS access, no project execution; pure layout primitive.
+- Allowed modules: `prototype2/src/App.tsx`, `prototype2/src/components/shell/*`.
+- Prohibited usage: never imported by `apps/desktop/`, `crates/*`, or the Tauri shell.
+- Verification: collapse a rail below its minimum, drag to resize, reload to confirm `autoSaveId="nerd-v2-layout"` restores sizes.
+
+### @tanstack/react-virtual
+
+- Version policy: `^3.13.6`
+- Feature: large-list virtualization (planned for Mail inbox, Request Inspector list, Log blocks in N3+).
+- Why needed: bounded memory and 60fps scroll when lists exceed a few hundred items, without coupling to a heavier data-grid.
+- Official docs: https://tanstack.com/virtual/latest
+- Security boundary: no IPC, no OS access.
+- Allowed modules: `prototype2/src/components/{mail,inspector,logs}/*`.
+- Prohibited usage: never imported outside `prototype2/`.
+- Verification: render a mocked 10,000-item inbox and confirm scroll remains smooth.
+
+### @radix-ui/react-tabs
+
+- Version policy: `^1.1.5`
+- Feature: multi-tab panes in Inspector Rail and Mail preview (N3 and N4). Unstyled, accessible primitive — Nerd provides styling through tokens.
+- Why needed: keyboard-navigable tabs with proper `role="tablist"` semantics; matches accessibility requirements in `context/ui-rules.md`.
+- Official docs: https://www.radix-ui.com/primitives/docs/components/tabs
+- Security boundary: no IPC, no OS access.
+- Allowed modules: `prototype2/src/components/{shell,inspector,mail}/*`.
+- Prohibited usage: never imported outside `prototype2/`.
+- Verification: keyboard `Tab` / arrow-key navigation between tabs; focus ring visible.
+
+### @radix-ui/react-toggle-group
+
+- Version policy: `^1.1.4`
+- Feature: Working Session toggle (`Active` / `All` / `Background`) in the Project Rail header.
+- Why needed: accessible single-select pill with proper `role="group"` semantics; keyboard support for arrow-key navigation between items.
+- Official docs: https://www.radix-ui.com/primitives/docs/components/toggle-group
+- Security boundary: no IPC, no OS access.
+- Allowed modules: `prototype2/src/components/shell/working-session-toggle.tsx`.
+- Prohibited usage: never imported outside `prototype2/`.
+- Verification: arrow-key navigation cycles through options; `aria-pressed` updates correctly.
+
+### V2 Dropped Dependencies
+
+Removed from the prototype2 `package.json` compared to `prototype/package.json`:
+
+- `@dnd-kit/core`, `@dnd-kit/modifiers`, `@dnd-kit/sortable`, `@dnd-kit/utilities` — N1+ workspace did not need DnD. If a future milestone reintroduces drag-to-reorder (e.g. project list ordering), re-evaluate against the same dependency rule.
+- `@tabler/icons-react` — `lucide-react` covers all required icons and is the canonical icon set per `prototype/src` history. No tabler-specific icons are used in v2.
+
 ## Pending Dependency Record Template
 
 ```md
