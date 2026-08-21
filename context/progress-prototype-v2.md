@@ -55,7 +55,7 @@ Same host as v1: Fedora Linux (no WSL mount of Windows). `prototype2/` is a brow
 - **Build path**: code-first, mirroring v1.
 - **Voice**: English.
 - **Theme default**: dark (OLED-cool slate). User can toggle to light or system.
-- **Lockfile isolation**: prototype2 owns its own `package-lock.json`; never touches `prototype/` or the parent workspace.
+- **Lockfile isolation**: prototype2 owns its own `package-lock.json`; never touches the parent workspace.
 - **shadcn primitives**: hand-curated (button, badge, separator, kbd) for N0; later milestones add tabs, toggle-group, command, dialog as needed.
 - **No analytics charts** in Overview (decision pending for N6; v1 rule carries over).
 - **Sticky shell + content-only scroll** in CenterStage; rails stay fixed.
