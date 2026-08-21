@@ -83,6 +83,7 @@ Post-MVP work lives in `context/roadmap.md` and `context/features/post-mvp/`. Do
 - No hardcoded colors or raw Tailwind palette classes in components.
 - Product releases follow SemVer; IPC, `nerd.json`, and SQLite use independent versions defined in `context/versioning.md`.
 - Every commit message follows Conventional Commits 1.0.0.
+- Never append an AI-generation trailer or footer (e.g. "🤖 Generated with opencode") to commit messages or pull request descriptions.
 - Newly discovered project code is untrusted and must not execute before Trust and Start preflight defined in `context/trust-model.md`.
 - Blocking items in `context/open-decisions.md` must be resolved before affected feature implementation.
 
