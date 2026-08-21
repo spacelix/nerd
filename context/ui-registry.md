@@ -129,7 +129,6 @@ From `src/components/ui/` (shadcn new-york style) — **v1**:
 | `Command` + family | CommandPalette |
 | `Sonner` | (available for future toasts) |
 | `Sheet`, `Drawer`, `Tabs`, `Table`, `Toggle`, `ToggleGroup`, `Select`, `Input`, `Avatar`, `Checkbox`, `Skeleton`, `Popover`, `Slider`, `Chart` | Available, not yet used |
-
 ## V2 Primitives
 
 `prototype2/` runs in parallel with v1. Paths below are relative to `prototype2/`. Each v2 primitive carries a `(v2)` tag in its entry.

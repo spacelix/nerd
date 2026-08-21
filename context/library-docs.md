@@ -219,6 +219,42 @@ Versions are exact for the Feature 02 implementation. Updating one requires read
 - Prohibited usage: deleting registry trees outside the Nerd-owned NRPT rule key, and removing certificates without fingerprint ownership match
 - Verification: NRPT add/remove postconditions, DPAPI round-trip, and trust-store ownership tests
 
+## Feature 03 Dependencies
+
+Versions are exact for the Feature 03 implementation. Updating one requires reading the new official documentation and rerunning all Feature 03 checks.
+
+### reqwest
+
+- Version policy: `=0.13.4`, default features disabled, `blocking` + `json` features
+- Feature: download official Node release index, ZIP archive, and checksum list over HTTPS
+- Why needed: Feature 03 runtime download; allows `node --version`-driven resolution
+- Official docs: https://docs.rs/reqwest/0.13.4/reqwest/
+- Security boundary: allowlisted official Node origins only; used inside `spawn_blocking`; timeout and redirect policy enforced
+- Allowed modules: `nerd-daemon::node`
+- Prohibited usage: non-allowlisted origins, unbounded bodies, and reuse for untrusted network targets
+- Verification: checksum-mismatch, interrupted download, and traversal-rejection tests
+
+### zip
+
+- Version policy: `=8.6.0`
+- Feature: extract Node Windows x64 ZIP archives
+- Why needed: Feature 03 runtime extraction
+- Official docs: https://docs.rs/zip/8.6.0/zip/
+- Security boundary: reject archive traversal (absolute paths, parent segments, escaping links); extraction to staging only
+- Allowed modules: `nerd-daemon::node`
+- Prohibited usage: extracting untrusted archives, writing outside staging, and promotion before verification
+- Verification: traversal-rejection and atomic-promote tests
+
+### sha2
+
+- Version policy: `=0.11.0`
+- Feature: verify Node archive SHA-256 checksums against the official SHASUMS256.txt
+- Why needed: Feature 03 integrity verification before extraction
+- Official docs: https://docs.rs/sha2/0.11.0/sha2/
+- Security boundary: compares against allowlisted official checksum list only
+- Allowed modules: `nerd-daemon::node`
+- Verification: tampered-archive rejection test
+
 ## Service Distribution Rules
 
 Every service adapter must document before implementation:
