@@ -22,7 +22,7 @@ The prototype uses [shadcn/ui](https://ui.shadcn.com) (new-york style) as the de
 
 ## Implemented Primitives
 
-Added to the registry only after the first working implementation lands. Path is relative to `prototype/src/`.
+Added to the registry only after the first working implementation lands. Path is relative to `prototype2/src/`.
 
 ### AppShell
 - Path: `app/App.tsx` (DashboardPage) + `components/app-sidebar.tsx`

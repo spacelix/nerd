@@ -347,10 +347,10 @@ Versions are recorded as the exact installed version at the time the dependency 
 
 ### V2 Dropped Dependencies
 
-Removed from the prototype2 `package.json` compared to `prototype/package.json`:
+Removed during the v1→v2 redesign (see the prototype2 `package.json`):
 
 - `@dnd-kit/core`, `@dnd-kit/modifiers`, `@dnd-kit/sortable`, `@dnd-kit/utilities` — N1+ workspace did not need DnD. If a future milestone reintroduces drag-to-reorder (e.g. project list ordering), re-evaluate against the same dependency rule.
-- `@tabler/icons-react` — `lucide-react` covers all required icons and is the canonical icon set per `prototype/src` history. No tabler-specific icons are used in v2.
+- `@tabler/icons-react` — `lucide-react` covers all required icons and is the canonical icon set per the v1 prototype history. No tabler-specific icons are used in v2.
 
 ## Pending Dependency Record Template
 
