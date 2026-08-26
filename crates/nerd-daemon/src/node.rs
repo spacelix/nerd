@@ -165,15 +165,17 @@ impl NodeManager {
     /// Resolve a version spec against the index to one concrete version.
     /// Resolve a version spec to one concrete version. Prefers an already
     /// installed compatible managed runtime before consulting the index.
+    /// LTS is exempt: only the index knows which release currently holds LTS.
     pub async fn resolve(&self, spec: &VersionSpec) -> Result<String, NodeError> {
-        if let Some(installed) = self
-            .state
-            .list_runtimes()
-            .await?
-            .iter()
-            .filter(|r| r.kind == RuntimeKind::Managed)
-            .map(|r| r.version.clone())
-            .find(|v| spec_matches(spec, v))
+        if !matches!(spec, VersionSpec::Lts)
+            && let Some(installed) = self
+                .state
+                .list_runtimes()
+                .await?
+                .iter()
+                .filter(|r| r.kind == RuntimeKind::Managed)
+                .map(|r| r.version.clone())
+                .find(|v| spec_matches(spec, v))
         {
             return Ok(installed);
         }
@@ -204,12 +206,17 @@ impl NodeManager {
                     .ok_or_else(|| NodeError::NotFound(format!("major {major}")))
             }
             VersionSpec::Range(range) => {
-                let major = range
-                    .trim_start_matches(['^', '~', '>', '=', ' ', 'v'])
-                    .split('.')
-                    .next()
-                    .and_then(|part| part.parse::<u32>().ok())
-                    .ok_or_else(|| NodeError::Unsupported(format!("unsupported range {range}")))?;
+                let body = range.trim_start_matches(['^', '~', '>', '=', ' ', 'v']);
+                // Minor-qualified ranges ("^20.11", "~20.11.1") are not
+                // supported; silently matching the whole major would be wrong.
+                if body.contains('.') {
+                    return Err(NodeError::Unsupported(format!(
+                        "unsupported range {range}; use a major such as '^20' or an exact version"
+                    )));
+                }
+                let Some(major) = body.parse::<u32>().ok() else {
+                    return Err(NodeError::Unsupported(format!("unsupported range {range}")));
+                };
                 let prefix = format!("{major}.");
                 index
                     .iter()
@@ -302,6 +309,23 @@ impl NodeManager {
         executable_path: &Path,
         architecture: &str,
     ) -> Result<RuntimeRecord, NodeError> {
+        // Sanity gate before probing: the caller selects the binary, but Nerd
+        // only accepts an absolute path to a node.exe that exists.
+        if !executable_path.is_absolute() {
+            return Err(NodeError::Unsupported(
+                "external Node path must be absolute".to_owned(),
+            ));
+        }
+        if executable_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| !name.eq_ignore_ascii_case("node.exe"))
+            .unwrap_or(true)
+        {
+            return Err(NodeError::Unsupported(
+                "external runtime must point at node.exe".to_owned(),
+            ));
+        }
         let version = probe_version(executable_path)
             .ok_or_else(|| NodeError::Degraded("node.exe did not report a version".to_owned()))?;
         let identity = binary_identity(executable_path)?;
@@ -480,7 +504,15 @@ pub async fn discover_external() -> Vec<(PathBuf, String)> {
 fn spec_matches(spec: &VersionSpec, version: &str) -> bool {
     let normalized = crate::version::normalize_version(version);
     match spec {
-        VersionSpec::Exact(exact) => normalized == crate::version::normalize_version(exact),
+        VersionSpec::Exact(exact) => {
+            let wanted = crate::version::normalize_version(exact);
+            // Two-part declarations such as "20.11" match any installed 20.11.x.
+            if wanted.matches('.').count() == 1 {
+                normalized.starts_with(&format!("{wanted}."))
+            } else {
+                normalized == wanted
+            }
+        }
         VersionSpec::Major(major) => {
             normalized
                 .split('.')
