@@ -68,7 +68,13 @@ pub fn parse(text: &str) -> Result<Manifest, ManifestError> {
 
     // Reject unknown top-level keys with their path.
     const ALLOWED_TOP_LEVEL: &[&str] = &[
-        "schemaVersion", "name", "node", "https", "framework", "scripts", "env",
+        "schemaVersion",
+        "name",
+        "node",
+        "https",
+        "framework",
+        "scripts",
+        "env",
     ];
     for key in object.keys() {
         if !ALLOWED_TOP_LEVEL.contains(&key.as_str()) {
@@ -112,13 +118,13 @@ pub fn parse(text: &str) -> Result<Manifest, ManifestError> {
     };
 
     let name = read_optional_string("name")?;
-    if let Some(name) = &name {
-        if !is_dns_label(name) {
-            return Err(ManifestError::InvalidValue {
-                path: "name".to_owned(),
-                reason: "must be a lowercase DNS label (letters, digits, hyphen)".to_owned(),
-            });
-        }
+    if let Some(name) = &name
+        && !is_dns_label(name)
+    {
+        return Err(ManifestError::InvalidValue {
+            path: "name".to_owned(),
+            reason: "must be a lowercase DNS label (letters, digits, hyphen)".to_owned(),
+        });
     }
 
     let node = read_optional_string("node")?;
@@ -131,7 +137,7 @@ pub fn parse(text: &str) -> Result<Manifest, ManifestError> {
             return Err(ManifestError::InvalidValue {
                 path: "https".to_owned(),
                 reason: "must be a boolean".to_owned(),
-            })
+            });
         }
     };
 
@@ -140,10 +146,12 @@ pub fn parse(text: &str) -> Result<Manifest, ManifestError> {
     match object.get("scripts") {
         None | Some(serde_json::Value::Null) => {}
         Some(scripts) => {
-            let scripts = scripts.as_object().ok_or_else(|| ManifestError::InvalidValue {
-                path: "scripts".to_owned(),
-                reason: "must be an object".to_owned(),
-            })?;
+            let scripts = scripts
+                .as_object()
+                .ok_or_else(|| ManifestError::InvalidValue {
+                    path: "scripts".to_owned(),
+                    reason: "must be an object".to_owned(),
+                })?;
             for key in scripts.keys() {
                 if key != "dev" {
                     return Err(ManifestError::UnknownKey(format!("scripts.{key}")));
@@ -171,20 +179,24 @@ pub fn parse(text: &str) -> Result<Manifest, ManifestError> {
     match object.get("env") {
         None | Some(serde_json::Value::Null) => {}
         Some(envs) => {
-            let envs = envs.as_object().ok_or_else(|| ManifestError::InvalidValue {
-                path: "env".to_owned(),
-                reason: "must be an object of string values".to_owned(),
-            })?;
+            let envs = envs
+                .as_object()
+                .ok_or_else(|| ManifestError::InvalidValue {
+                    path: "env".to_owned(),
+                    reason: "must be an object of string values".to_owned(),
+                })?;
             for (key, value) in envs {
                 if !is_env_key(key) {
                     return Err(ManifestError::InvalidValue {
                         path: format!("env.{key}"),
-                        reason: "must be an uppercase identifier (A-Z, digits, underscore)".to_owned(),
+                        reason: "must be an uppercase identifier (A-Z, digits, underscore)"
+                            .to_owned(),
                     });
                 }
-                if RESERVED_ENV_KEY_PATTERN.iter().any(|pattern| {
-                    key.to_ascii_lowercase().contains(pattern)
-                }) {
+                if RESERVED_ENV_KEY_PATTERN
+                    .iter()
+                    .any(|pattern| key.to_ascii_lowercase().contains(pattern))
+                {
                     return Err(ManifestError::ProhibitedEnvKey(format!("env.{key}")));
                 }
                 let value = value.as_str().ok_or_else(|| ManifestError::InvalidValue {
@@ -213,20 +225,24 @@ pub fn parse(text: &str) -> Result<Manifest, ManifestError> {
 fn is_dns_label(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 63
-        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && !name.starts_with('-')
         && !name.ends_with('-')
 }
 
 fn is_env_key(key: &str) -> bool {
     !key.is_empty()
-        && key.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        && key
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
         && !key.chars().next().is_some_and(|c| c.is_ascii_digit())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, ManifestError};
+    use super::{ManifestError, parse};
 
     #[test]
     fn parses_valid_minimal_manifest() {

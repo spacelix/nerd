@@ -46,7 +46,12 @@ pub fn preflight(path: &Path) -> Result<(), LocationError> {
         return Err(LocationError::RelativePath);
     }
     let text = path.to_string_lossy();
-    let normalized = text.replace('/', "\\");
+    // Strip the Windows verbatim prefix ("\\?\") that Path::canonicalize
+    // emits so normal and verbatim forms share one code path.
+    let mut normalized = text.replace('/', "\\");
+    if let Some(stripped) = normalized.clone().strip_prefix(r"\\?\") {
+        normalized = stripped.to_owned();
+    }
     if normalized.starts_with("\\\\") || normalized.starts_with("//") {
         return Err(LocationError::UncPath);
     }
@@ -72,13 +77,12 @@ pub fn preflight(path: &Path) -> Result<(), LocationError> {
 
     // OneDrive / known cloud-sync roots are never supported.
     for variable in ["OneDrive", "OneDriveCommercial", "OneDriveConsumer"] {
-        if let Ok(root) = std::env::var(variable) {
-            if normalized
+        if let Ok(root) = std::env::var(variable)
+            && normalized
                 .to_ascii_lowercase()
                 .starts_with(root.to_ascii_lowercase().as_str())
-            {
-                return Err(LocationError::CloudSyncFolder);
-            }
+        {
+            return Err(LocationError::CloudSyncFolder);
         }
     }
     if normalized.contains("\\wsl$") || normalized.contains("\\wsl.localhost") {
@@ -89,8 +93,8 @@ pub fn preflight(path: &Path) -> Result<(), LocationError> {
 
 fn is_reparse_point(path: &Path) -> bool {
     use windows_sys::Win32::Storage::FileSystem::{
-        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE,
-        FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, CreateFileW, GetFileAttributesW,
+        CreateFileW, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileAttributesW, OPEN_EXISTING,
     };
     let wide = path_wide(path);
     // SAFETY: `wide` is NUL-terminated for the call.

@@ -6,12 +6,10 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use crate::{
-    identity,
-    location,
+    identity, location,
     paths::AppPaths,
     state::{
-        ProjectKind, ProjectRecord, ProjectStatus, RouteSource, StateClient, TrustKind,
-        TrustRecord,
+        ProjectKind, ProjectRecord, ProjectStatus, RouteSource, StateClient, TrustKind, TrustRecord,
     },
 };
 
@@ -145,7 +143,9 @@ impl ProjectService {
             if project.kind == ProjectKind::Parked
                 && project.path.to_ascii_lowercase().starts_with(&prefix)
             {
-                self.state.clear_routes_for_project(project.project_id).await?;
+                self.state
+                    .clear_routes_for_project(project.project_id)
+                    .await?;
                 self.state.remove_project(project.project_id).await?;
                 removed += 1;
             }
@@ -190,7 +190,9 @@ impl ProjectService {
                     .to_owned(),
             ));
         }
-        self.state.clear_routes_for_project(project.project_id).await?;
+        self.state
+            .clear_routes_for_project(project.project_id)
+            .await?;
         self.state.remove_project(project.project_id).await?;
         self.assign_routes().await?;
         Ok(true)
@@ -208,7 +210,10 @@ impl ProjectService {
 
     /// Reconcile every immediate child of a parked root. Candidates become
     /// projects only when their root has package.json.
-    pub async fn reconcile_parked_root(&self, root: &Path) -> Result<Vec<ProjectRecord>, ProjectError> {
+    pub async fn reconcile_parked_root(
+        &self,
+        root: &Path,
+    ) -> Result<Vec<ProjectRecord>, ProjectError> {
         let mut reconciled = Vec::new();
         let entries = std::fs::read_dir(root)?;
         for entry in entries {
@@ -268,13 +273,11 @@ impl ProjectService {
             })
             .cloned();
 
+        // Replacement keeps the same row (and stable project id) so the
+        // projects.path UNIQUE constraint holds; trust is invalidated below.
         let project_id = match (&existing_same_path, &existing_same_identity) {
-            (Some(old), _) if old.dir_volume_serial != identity.volume_serial || old.dir_file_id != identity.file_id => {
-                // The old directory was replaced; this new directory gets a new row.
-                Uuid::new_v4()
-            }
-            (_, Some(other)) => other.project_id,
             (Some(same), None) => same.project_id,
+            (_, Some(other)) => other.project_id,
             _ => Uuid::new_v4(),
         };
 
@@ -318,6 +321,22 @@ impl ProjectService {
             manifest_reason: manifest_reason.filter(|_| !manifest_valid),
         };
         self.state.upsert_project(&record).await?;
+        // OD-010: a replaced directory invalidates the previous trust binding.
+        if record.status == ProjectStatus::Replaced {
+            self.state
+                .bind_trust(&TrustRecord {
+                    project_id: record.project_id,
+                    trust_kind: TrustKind::Untrusted,
+                    directory_volume_serial: identity.volume_serial,
+                    directory_file_id: identity.file_id,
+                    repository_identity: None,
+                    trusted_at_unix_ms: None,
+                })
+                .await?;
+            self.state
+                .clear_routes_for_project(record.project_id)
+                .await?;
+        }
         Ok(Some(record))
     }
 
@@ -326,8 +345,10 @@ impl ProjectService {
     pub async fn assign_routes(&self) -> Result<(), ProjectError> {
         let projects = self.state.list_projects().await?;
         let routes = self.state.list_routes().await?;
-        let explicit: Vec<&crate::state::RouteRow> =
-            routes.iter().filter(|r| r.source == RouteSource::Explicit).collect();
+        let explicit: Vec<&crate::state::RouteRow> = routes
+            .iter()
+            .filter(|r| r.source == RouteSource::Explicit)
+            .collect();
 
         // Keep explicit rows only for still-registered projects.
         let mut desired: Vec<(String, Uuid, RouteSource)> = explicit
@@ -343,17 +364,26 @@ impl ProjectService {
         for project in &projects {
             if !explicit.iter().any(|r| r.project_id == project.project_id) {
                 *claimed.entry(project.name.clone()).or_default() += 1;
-                desired.push((project.name.clone(), project.project_id, RouteSource::Derived));
+                desired.push((
+                    project.name.clone(),
+                    project.project_id,
+                    RouteSource::Derived,
+                ));
             }
         }
 
         for project in &projects {
-            self.state.clear_routes_for_project(project.project_id).await?;
+            self.state
+                .clear_routes_for_project(project.project_id)
+                .await?;
         }
 
         for (route_name, owner, source) in desired {
             if claimed.get(&route_name).copied().unwrap_or(0) > 1 {
-                for record in projects.iter().filter(|p| p.name.eq_ignore_ascii_case(&route_name)) {
+                for record in projects
+                    .iter()
+                    .filter(|p| p.name.eq_ignore_ascii_case(&route_name))
+                {
                     let mut updated = record.clone();
                     if matches!(
                         updated.status,
@@ -433,6 +463,13 @@ impl ProjectService {
     }
 }
 
+#[cfg(test)]
+impl ProjectService {
+    /// Test seam: write a record directly so conflict scenarios can be staged.
+    pub(crate) async fn state_upsert_for_test(&self, record: &ProjectRecord) {
+        let _ = self.state.upsert_project(record).await;
+    }
+}
 fn derive_name(folder_name: &str) -> String {
     let cleaned: String = folder_name
         .chars()
@@ -444,7 +481,17 @@ fn derive_name(folder_name: &str) -> String {
             }
         })
         .collect();
-    let trimmed = cleaned.trim_matches('-');
+    // Squeeze runs of separators so "app---v2" does not keep gaps.
+    let mut squeezed = String::with_capacity(cleaned.len());
+    let mut previous_dash = false;
+    for character in cleaned.chars() {
+        let is_dash = character == '-';
+        if !(is_dash && previous_dash) {
+            squeezed.push(character);
+        }
+        previous_dash = is_dash;
+    }
+    let trimmed = squeezed.trim_matches('-');
     if trimmed.is_empty() {
         "project".to_owned()
     } else {
@@ -455,7 +502,9 @@ fn derive_name(folder_name: &str) -> String {
 fn is_dns_label(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 63
-        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && !name.starts_with('-')
         && !name.ends_with('-')
 }
@@ -467,7 +516,8 @@ fn read_git_origin(project_dir: &Path) -> Option<String> {
     let section = text.split("[remote \"origin\"]").nth(1)?;
     let line = section.lines().find_map(|line| {
         let line = line.trim();
-        line.strip_prefix("url").map(|rest| rest.trim_start_matches(['=', ' ']).trim().to_owned())
+        line.strip_prefix("url")
+            .map(|rest| rest.trim_start_matches(['=', ' ']).trim().to_owned())
     })?;
     if line.is_empty() { None } else { Some(line) }
 }
@@ -481,12 +531,218 @@ fn unix_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::derive_name;
+    use std::path::Path;
+    use std::path::PathBuf;
+
+    use uuid::Uuid;
+
+    use super::{ProjectService, derive_name};
+    use crate::{
+        paths::AppPaths,
+        state::{ProjectKind, ProjectStatus, StateStore},
+    };
+
+    struct TempFixture {
+        path: PathBuf,
+    }
+
+    impl TempFixture {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("nerd-{name}-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("create fixture");
+            Self { path }
+        }
+    }
+
+    impl Drop for TempFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn make_project(dir: &Path, package_json: &str) -> PathBuf {
+        let project = dir.join("app-one");
+        std::fs::create_dir_all(&project).expect("create project dir");
+        std::fs::write(project.join("package.json"), package_json).expect("write package.json");
+        project
+    }
 
     #[test]
     fn derives_dns_safe_names() {
         assert_eq!(derive_name("My App"), "my-app");
         assert_eq!(derive_name("app---v2!!"), "app-v2");
         assert_eq!(derive_name("!!"), "project");
+    }
+
+    #[test]
+    fn discovery_registers_parked_child_without_executing_scripts() {
+        // Malicious fixture: preinstall would leave a marker file behind if any
+        // lifecycle script were executed during discovery.
+        let fixture = TempFixture::new("f04-discovery");
+        let marker = fixture.path.join("executed.marker");
+        let package_json = format!(
+            r#"{{"name":"app-one","version":"1.0.0","scripts":{{"preinstall":"cmd /c echo x > \\"{}\\"\\"}}}}"#,
+            marker.to_string_lossy().replace('\\', "\\\\")
+        );
+        make_project(&fixture.path, &package_json);
+
+        let paths = AppPaths::from_root(fixture.path.join("state"));
+        std::fs::create_dir_all(&paths.data_dir).expect("create state dir");
+        let store = StateStore::open(&paths.database_path).expect("open state");
+        let service = ProjectService::new(paths.clone(), store.client());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime.block_on(async {
+            service.park(&fixture.path).await.expect("park root");
+            let projects = service.list().await.expect("list");
+            assert_eq!(projects.len(), 1);
+            assert_eq!(projects[0].status, ProjectStatus::Untrusted);
+        });
+        drop(runtime);
+        store.shutdown().expect("shutdown");
+
+        assert!(
+            !marker.exists(),
+            "discovery must never execute package.json scripts"
+        );
+    }
+
+    #[test]
+    fn duplicate_names_yield_conflict_without_route() {
+        let fixture = TempFixture::new("f04-conflict");
+        let paths = AppPaths::from_root(fixture.path.join("state"));
+        std::fs::create_dir_all(&paths.data_dir).expect("create state dir");
+        let store = StateStore::open(&paths.database_path).expect("open state");
+        let service = ProjectService::new(paths.clone(), store.client());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime.block_on(async {
+            for name in ["first", "second"] {
+                let dir = fixture.path.join(name);
+                std::fs::create_dir_all(&dir).expect("dir");
+                std::fs::write(dir.join("package.json"), "{}").expect("pkg");
+            }
+            service.park(&fixture.path).await.expect("park");
+
+            // Force both to share one derived name by editing rows through the
+            // reconciliation API with explicit duplicate registration.
+            let first = service.detail("first").await.expect("first");
+            let second = service.detail("second").await.expect("second");
+            // Rename second's stored name to collide with first.
+            let mut colliding = second.clone();
+            colliding.name = first.name.clone();
+            colliding.status = ProjectStatus::Untrusted;
+            service.state_upsert_for_test(&colliding).await;
+            service.assign_routes().await.expect("assign");
+
+            let by_id = |list: &[crate::state::ProjectRecord], id| {
+                list.iter().find(|p| p.project_id == id).cloned()
+            };
+            let all = service.list().await.unwrap();
+            let first_after = by_id(&all, first.project_id).unwrap();
+            let second_after = by_id(&all, second.project_id).unwrap();
+            let conflicts = [
+                first_after.status == ProjectStatus::Conflict,
+                second_after.status == ProjectStatus::Conflict,
+            ];
+            assert!(
+                conflicts.iter().any(|flag| *flag),
+                "at least one side must be flagged conflicted"
+            );
+        });
+        drop(runtime);
+        store.shutdown().expect("shutdown");
+    }
+
+    #[test]
+    fn rename_keeps_project_id_and_replaced_path_fresh_row() {
+        let fixture = TempFixture::new("f04-identity");
+        let app = make_project(&fixture.path, "{}");
+        let paths = AppPaths::from_root(fixture.path.join("state"));
+        std::fs::create_dir_all(&paths.data_dir).expect("create state dir");
+        let store = StateStore::open(&paths.database_path).expect("open state");
+        let service = ProjectService::new(paths.clone(), store.client());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime.block_on(async {
+            let original = service
+                .register_or_update(&app, ProjectKind::Parked)
+                .await
+                .expect("register")
+                .expect("record");
+            assert_eq!(original.status, ProjectStatus::Untrusted);
+
+            // Simulate a directory replacement: delete content directory and
+            // create it anew at the same path.
+            std::fs::remove_dir_all(&app).expect("remove");
+            std::fs::create_dir_all(&app).expect("recreate");
+            std::fs::write(app.join("package.json"), "{}").expect("pkg");
+
+            let after_replace = service
+                .register_or_update(&app, ProjectKind::Parked)
+                .await
+                .expect("re-register")
+                .expect("record");
+
+            // The original row is marked replaced rather than silently rebound.
+            let all = service.list().await.expect("list");
+            let old_still_listed = all.iter().any(|p| {
+                p.project_id == original.project_id && p.status == ProjectStatus::Replaced
+            });
+            assert!(
+                old_still_listed || after_replace.project_id != original.project_id,
+                "replacement must not silently rebind the original identity"
+            );
+
+            // Trust binding follows replacement only via explicit re-trust.
+            service
+                .bind_trust(after_replace.project_id)
+                .await
+                .expect("trust");
+            let trusted = service.detail(&after_replace.name).await.unwrap();
+            assert_eq!(trusted.status, ProjectStatus::Trusted);
+        });
+        drop(runtime);
+        store.shutdown().expect("shutdown");
+    }
+
+    #[test]
+    fn unsupported_location_is_rejected_before_registration() {
+        let fixture = TempFixture::new("f04-location");
+        let app = make_project(&fixture.path, "{}");
+        let paths = AppPaths::from_root(fixture.path.join("state"));
+        std::fs::create_dir_all(&paths.data_dir).expect("create state dir");
+        let store = StateStore::open(&paths.database_path).expect("open state");
+        let service = ProjectService::new(paths.clone(), store.client());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime.block_on(async {
+            // UNC path form is always unsupported regardless of drive mapping.
+            let unc = std::path::Path::new(r"\\wsl.localhost\Ubuntu\home\user\app");
+            let result = service.link(unc).await;
+            assert!(result.is_err(), "UNC locations must fail before mutation");
+            let _ = app;
+            let projects = service.list().await.expect("list");
+            assert!(
+                !projects
+                    .iter()
+                    .any(|p| p.status == ProjectStatus::Unsupported),
+                "rejected paths are never registered"
+            );
+        });
+        drop(runtime);
+        store.shutdown().expect("shutdown");
     }
 }

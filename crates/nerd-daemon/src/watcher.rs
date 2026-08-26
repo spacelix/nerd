@@ -9,8 +9,11 @@
 use std::{
     collections::BTreeMap,
     ffi::c_void,
-    path::PathBuf,
-    sync::{mpsc::{self, Sender}, Mutex},
+    path::{Path, PathBuf},
+    sync::{
+        Mutex,
+        mpsc::{self, Sender},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -18,10 +21,9 @@ use std::{
 use windows_sys::Win32::{
     Foundation::{CloseHandle, INVALID_HANDLE_VALUE, WAIT_OBJECT_0},
     Storage::FileSystem::{
-        CreateFileW, ReadDirectoryChangesW, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
-        FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME,
-        FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-        OPEN_EXISTING,
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE_DIR_NAME,
+        FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, ReadDirectoryChangesW,
     },
     System::Threading::{CreateEventW, SetEvent, WaitForSingleObject},
 };
@@ -87,13 +89,15 @@ unsafe impl Send for WatchThread {}
 
 impl Watcher {
     /// Start the reconciliation worker plus watchers for each parked root.
-    pub fn start(roots: Vec<PathBuf>, on_event: impl Fn(WatchEvent) + Send + 'static) -> Result<Self, WatchError> {
+    pub fn start(
+        roots: Vec<PathBuf>,
+        on_event: impl Fn(WatchEvent) + Send + 'static,
+    ) -> Result<Self, WatchError> {
         let (sender, receiver) = mpsc::channel::<WatchEvent>();
         // Coalescing/debounce relay: collapses bursts into a single delivery.
         let _relay = thread::Builder::new()
             .name("nerd-watch-debounce".to_owned())
-            .spawn(move || run_debounce(receiver, on_event))
-            .map_err(std::io::Error::from)?;
+            .spawn(move || run_debounce(receiver, on_event))?;
 
         let mut threads = Vec::new();
         for root in roots {
@@ -107,8 +111,8 @@ impl Watcher {
     }
 
     /// Start watching another parked root at runtime.
-    pub fn add_root(&self, root: &PathBuf) -> Result<(), WatchError> {
-        let thread = spawn_root_watcher(root.clone(), self.sender.clone())?;
+    pub fn add_root(&self, root: &Path) -> Result<(), WatchError> {
+        let thread = spawn_root_watcher(root.to_path_buf(), self.sender.clone())?;
         self.threads.lock().map(|mut guard| guard.push(thread)).ok();
         Ok(())
     }
@@ -187,15 +191,17 @@ fn spawn_root_watcher(
         stop_event,
     };
     let _handle = std::thread::Builder::new()
-        .name(format!("nerd-watch-{}", root.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()))
+        .name(format!(
+            "nerd-watch-{}",
+            root.file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default()
+        ))
         .spawn(move || {
             run_root_loop(root_for_thread, handles, sender);
-        })
-        .map_err(std::io::Error::from)?;
+        })?;
 
-    Ok(WatchThread {
-        stop_event,
-    })
+    Ok(WatchThread { stop_event })
 }
 
 fn run_root_loop(root: PathBuf, handles: ThreadHandles, sender: Sender<WatchEvent>) {
@@ -212,7 +218,9 @@ fn run_root_loop(root: PathBuf, handles: ThreadHandles, sender: Sender<WatchEven
                 buffer.as_mut_ptr().cast::<c_void>(),
                 BUFFER_BYTES as u32,
                 0, // immediate children only
-                FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE,
+                FILE_NOTIFY_CHANGE_DIR_NAME
+                    | FILE_NOTIFY_CHANGE_FILE_NAME
+                    | FILE_NOTIFY_CHANGE_LAST_WRITE,
                 &mut bytes_returned,
                 std::ptr::null_mut(),
                 None,
@@ -271,23 +279,4 @@ fn run_debounce(receiver: mpsc::Receiver<WatchEvent>, on_event: impl Fn(WatchEve
             on_event(WatchEvent { root });
         }
     }
-}
-
-/// Spawn helper used by tests to exercise debounce behavior without a real
-/// directory watch.
-#[cfg(test)]
-pub(crate) fn test_debounce_channel()
--> (mpsc::Sender<WatchEvent>, Arc<Mutex<Vec<WatchEvent>>>) {
-    let (sender, receiver) = mpsc::channel();
-    let delivered = Arc::new(Mutex::new(Vec::new()));
-    let sink = Arc::clone(&delivered);
-    std::thread::Builder::new()
-        .name("test-debounce".to_owned())
-        .spawn(move || {
-            run_debounce(receiver, move |event| {
-                sink.lock().expect("sink lock").push(event);
-            })
-        })
-        .expect("spawn debounce");
-    (sender, delivered)
 }

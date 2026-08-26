@@ -133,6 +133,78 @@
             "type": { "const": "runtime_register_external" },
             "payload": { "$ref": "#/$defs/runtimeRegisterExternalRequest" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_park" },
+            "payload": { "$ref": "#/$defs/projectPathRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_unpark" },
+            "payload": { "$ref": "#/$defs/projectPathRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_link" },
+            "payload": { "$ref": "#/$defs/projectPathRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_unlink" },
+            "payload": { "$ref": "#/$defs/projectNameRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_list" },
+            "payload": { "$ref": "#/$defs/projectListRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_detail" },
+            "payload": { "$ref": "#/$defs/projectNameRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_trust" },
+            "payload": { "$ref": "#/$defs/projectNameRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_route" },
+            "payload": { "$ref": "#/$defs/projectRouteRequest" }
+          }
         }
       ]
     },
@@ -213,6 +285,120 @@
       "properties": {
         "executablePath": { "type": "string", "minLength": 1 },
         "architecture": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectPathRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectNameRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectListRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "projectRouteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "route"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "route": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectOpResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "path"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectUnparkResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["removedProjects"],
+      "properties": {
+        "removedProjects": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "projectUnlinkResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["removed"],
+      "properties": {
+        "removed": { "type": "boolean" }
+      }
+    },
+    "projectListResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projects"],
+      "properties": {
+        "projects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/projectInfo" }
+        }
+      }
+    },
+    "projectTrustResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "trusted"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "trusted": { "type": "boolean" }
+      }
+    },
+    "projectRouteResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route"],
+      "properties": {
+        "route": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "kind",
+        "path",
+        "name",
+        "status",
+        "manifestValid"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "kind": { "enum": ["parked", "linked"] },
+        "path": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": [
+            "untrusted",
+            "trusted",
+            "conflict",
+            "missing",
+            "replaced",
+            "unsupported"
+          ]
+        },
+        "manifestValid": { "type": "boolean" },
+        "manifestReason": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "routeName": { "type": "string", "minLength": 1 }
       }
     },
     "responseEnvelope": {
@@ -324,6 +510,78 @@
           "properties": {
             "type": { "const": "runtime_register_external" },
             "payload": { "$ref": "#/$defs/runtimeInfo" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_park" },
+            "payload": { "$ref": "#/$defs/projectOpResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_unpark" },
+            "payload": { "$ref": "#/$defs/projectUnparkResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_link" },
+            "payload": { "$ref": "#/$defs/projectInfo" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_unlink" },
+            "payload": { "$ref": "#/$defs/projectUnlinkResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_list" },
+            "payload": { "$ref": "#/$defs/projectListResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_detail" },
+            "payload": { "$ref": "#/$defs/projectInfo" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_trust" },
+            "payload": { "$ref": "#/$defs/projectTrustResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_route" },
+            "payload": { "$ref": "#/$defs/projectRouteResponse" }
           }
         },
         {

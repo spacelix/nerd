@@ -869,10 +869,10 @@ fn get_trust(connection: &Connection, project_id: Uuid) -> Result<Option<TrustRe
                         "trusted" => TrustKind::Trusted,
                         _ => TrustKind::Untrusted,
                     },
-                    directory_volume_serial: row.get::<_, i64>(2)?.unsigned_abs() as u64,
-                    directory_file_id: row.get::<_, i64>(3)?.unsigned_abs() as u64,
+                    directory_volume_serial: row.get::<_, i64>(2)?.unsigned_abs(),
+                    directory_file_id: row.get::<_, i64>(3)?.unsigned_abs(),
                     repository_identity: row.get(4)?,
-                    trusted_at_unix_ms: trusted_at.map(|value| value.unsigned_abs() as u64),
+                    trusted_at_unix_ms: trusted_at.map(|value| value.unsigned_abs()),
                 })
             },
         )
@@ -917,8 +917,8 @@ fn map_project_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectRecord> {
             _ => ProjectKind::Linked,
         },
         path: row.get(2)?,
-        dir_volume_serial: row.get::<_, i64>(3)?.unsigned_abs() as u64,
-        dir_file_id: row.get::<_, i64>(4)?.unsigned_abs() as u64,
+        dir_volume_serial: row.get::<_, i64>(3)?.unsigned_abs(),
+        dir_file_id: row.get::<_, i64>(4)?.unsigned_abs(),
         name: row.get(5)?,
         status: match row.get::<_, String>(6)?.as_str() {
             "untrusted" => ProjectStatus::Untrusted,
