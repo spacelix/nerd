@@ -44,7 +44,6 @@ pub fn parse_spec(declaration: &str) -> Option<VersionSpec> {
     }
     // Exact "20" or "20.11.1" (simple two/three-part). A leading "=" is exact.
     let simple = normalized.trim_start_matches('=');
-    let simple = simple.trim_start_matches('~');
     if let Ok(major) = simple.parse::<u32>() {
         if !simple.contains('.') {
             return Some(VersionSpec::Major(major));

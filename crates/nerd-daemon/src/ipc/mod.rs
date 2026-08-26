@@ -436,18 +436,36 @@ async fn handle_connection(
                 match spec {
                     Ok(spec) => match context.node.resolve(&spec).await {
                         Ok(version) => {
-                            let _ = context
+                            match context
                                 .state
                                 .set_setting(
                                     "runtime.default".to_owned(),
                                     serde_json::json!({ "version": version }).to_string(),
                                 )
-                                .await;
-                            Response::RuntimeSetDefault(RuntimeSetDefaultResponse { version })
+                                .await
+                            {
+                                Ok(()) => Response::RuntimeSetDefault(RuntimeSetDefaultResponse {
+                                    version,
+                                }),
+                                Err(error) => Response::Error(state_error(error)),
+                            }
                         }
                         Err(error) => Response::Error(node_error(error)),
                     },
                     Err(error) => Response::Error(error),
+                }
+            }
+            Request::RuntimeRegisterExternal(request) => {
+                match context
+                    .node
+                    .register_external(
+                        std::path::Path::new(&request.executable_path),
+                        &request.architecture,
+                    )
+                    .await
+                {
+                    Ok(record) => Response::RuntimeRegisterExternal(into_runtime_info(record)),
+                    Err(error) => Response::Error(node_error(error)),
                 }
             }
             Request::Handshake(_) => Response::Error(ErrorResponse::new(
@@ -564,9 +582,21 @@ fn network_error(error: SetupError) -> ErrorResponse {
     ErrorResponse::new(ErrorCode::Internal, message, false)
 }
 
-fn node_error(error: crate::node::NodeError) -> ErrorResponse {
+fn state_error(error: crate::state::StateError) -> ErrorResponse {
     let message = error.to_string();
     ErrorResponse::new(ErrorCode::Internal, message, false)
+}
+
+fn node_error(error: crate::node::NodeError) -> ErrorResponse {
+    use crate::node::NodeError;
+    let message = error.to_string();
+    let code = match &error {
+        NodeError::Degraded(_) => ErrorCode::RuntimeDegraded,
+        NodeError::NotFound(_) => ErrorCode::RuntimeNotFound,
+        NodeError::Checksum => ErrorCode::RuntimeChecksum,
+        _ => ErrorCode::Internal,
+    };
+    ErrorResponse::new(code, message, false)
 }
 
 fn into_runtime_info(record: RuntimeRecord) -> nerd_core::runtime::RuntimeInfo {

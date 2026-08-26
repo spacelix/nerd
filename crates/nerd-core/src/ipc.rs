@@ -28,6 +28,7 @@ pub enum Request {
     RuntimeList(RuntimeListRequest),
     RuntimeRemove(RuntimeRemoveRequest),
     RuntimeSetDefault(RuntimeSetDefaultRequest),
+    RuntimeRegisterExternal(RuntimeRegisterExternalRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -80,6 +81,7 @@ pub enum Response {
     RuntimeList(RuntimeListResponse),
     RuntimeRemove(RuntimeRemoveResponse),
     RuntimeSetDefault(RuntimeSetDefaultResponse),
+    RuntimeRegisterExternal(crate::runtime::RuntimeInfo),
     Error(ErrorResponse),
 }
 
@@ -313,6 +315,15 @@ pub struct RuntimeSetDefaultResponse {
     pub version: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeRegisterExternalRequest {
+    #[serde(deserialize_with = "nonempty_string")]
+    pub executable_path: String,
+    #[serde(deserialize_with = "nonempty_string")]
+    pub architecture: String,
+}
+
 fn positive_u16<'de, D>(deserializer: D) -> Result<u16, D::Error>
 where
     D: de::Deserializer<'de>,
@@ -419,6 +430,9 @@ pub enum ErrorCode {
     InvalidRequest,
     DaemonUnhealthy,
     ShuttingDown,
+    RuntimeDegraded,
+    RuntimeNotFound,
+    RuntimeChecksum,
     Internal,
 }
 

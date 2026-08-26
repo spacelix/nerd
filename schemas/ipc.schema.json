@@ -124,6 +124,15 @@
             "type": { "const": "runtime_set_default" },
             "payload": { "$ref": "#/$defs/runtimeSetDefaultRequest" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_register_external" },
+            "payload": { "$ref": "#/$defs/runtimeRegisterExternalRequest" }
+          }
         }
       ]
     },
@@ -195,6 +204,15 @@
       "required": ["version"],
       "properties": {
         "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runtimeRegisterExternalRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executablePath", "architecture"],
+      "properties": {
+        "executablePath": { "type": "string", "minLength": 1 },
+        "architecture": { "type": "string", "minLength": 1 }
       }
     },
     "responseEnvelope": {
@@ -297,6 +315,15 @@
           "properties": {
             "type": { "const": "runtime_set_default" },
             "payload": { "$ref": "#/$defs/runtimeSetDefaultResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "runtime_register_external" },
+            "payload": { "$ref": "#/$defs/runtimeInfo" }
           }
         },
         {
@@ -540,6 +567,9 @@
             "invalid_request",
             "daemon_unhealthy",
             "shutting_down",
+            "runtime_degraded",
+            "runtime_not_found",
+            "runtime_checksum",
             "internal"
           ]
         },

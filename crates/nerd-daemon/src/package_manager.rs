@@ -91,13 +91,11 @@ impl PackageManagerRunner {
                 Ok((npm, Vec::new(), Vec::new()))
             }
             "pnpm" | "yarn" => {
+                let pinned = format!("{}@{}", manager.name, manager.version);
                 if corepack.exists() {
-                    // Corepack bundled with Node <25.
-                    Ok((
-                        corepack,
-                        vec![manager.name.clone(), manager.version.clone()],
-                        Vec::new(),
-                    ))
+                    // Corepack bundled with Node <25; a single name@version arg
+                    // pins the exact tool version.
+                    Ok((corepack, vec![pinned], Vec::new()))
                 } else {
                     // Node 25+: Corepack is not bundled; use the Nerd-managed
                     // standalone corepack under the data directory.
@@ -108,11 +106,7 @@ impl PackageManagerRunner {
                         ));
                     }
                     let _ = project_dir;
-                    Ok((
-                        standalone,
-                        vec![manager.name.clone(), manager.version.clone()],
-                        Vec::new(),
-                    ))
+                    Ok((standalone, vec![pinned], Vec::new()))
                 }
             }
             other => Err(PackageManagerError::Unsupported(format!(
