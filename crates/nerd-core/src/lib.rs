@@ -1,5 +1,6 @@
 pub mod codec;
 pub mod ipc;
+pub mod manifest;
 pub mod runtime;
 pub mod setup;
 

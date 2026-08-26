@@ -1,16 +1,20 @@
 pub mod cert;
 pub mod dns;
 pub mod exec;
+pub mod identity;
 pub mod instance;
 pub mod ipc;
+pub mod location;
 pub mod logging;
 pub mod node;
 pub mod package_manager;
 pub mod paths;
+pub mod project;
 pub mod setup;
 pub mod shutdown;
 pub mod state;
 pub mod version;
+pub mod watcher;
 
 pub(crate) mod windows;
 

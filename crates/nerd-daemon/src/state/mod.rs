@@ -198,6 +198,60 @@ impl StateClient {
             .await
     }
 
+    pub async fn list_projects(&self) -> Result<Vec<ProjectRecord>, StateError> {
+        self.request(StateCommand::ListProjects).await
+    }
+
+    pub async fn upsert_project(&self, project: &ProjectRecord) -> Result<(), StateError> {
+        self.request(|reply| StateCommand::UpsertProject {
+            project: project.clone(),
+            reply,
+        })
+        .await
+    }
+
+    pub async fn remove_project(&self, project_id: Uuid) -> Result<(), StateError> {
+        self.request(|reply| StateCommand::RemoveProject { project_id, reply })
+            .await
+    }
+
+    pub async fn list_routes(&self) -> Result<Vec<RouteRow>, StateError> {
+        self.request(StateCommand::ListRoutes).await
+    }
+
+    pub async fn set_route(
+        &self,
+        route_name: String,
+        project_id: Uuid,
+        source: RouteSource,
+    ) -> Result<(), StateError> {
+        self.request(|reply| StateCommand::SetRoute {
+            route_name,
+            project_id,
+            source,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn clear_routes_for_project(&self, project_id: Uuid) -> Result<(), StateError> {
+        self.request(|reply| StateCommand::ClearRoutesForProject { project_id, reply })
+            .await
+    }
+
+    pub async fn get_trust(&self, project_id: Uuid) -> Result<Option<TrustRecord>, StateError> {
+        self.request(|reply| StateCommand::GetTrust { project_id, reply })
+            .await
+    }
+
+    pub async fn bind_trust(&self, trust: &TrustRecord) -> Result<(), StateError> {
+        self.request(|reply| StateCommand::BindTrust {
+            trust: trust.clone(),
+            reply,
+        })
+        .await
+    }
+
     pub async fn finish_operation(
         &self,
         operation_id: Uuid,
@@ -255,6 +309,64 @@ pub enum RuntimeStatus {
     Degraded,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectKind {
+    Parked,
+    Linked,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectStatus {
+    Untrusted,
+    Trusted,
+    Conflict,
+    Missing,
+    Replaced,
+    Unsupported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RouteSource {
+    Derived,
+    Explicit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrustKind {
+    Untrusted,
+    Trusted,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectRecord {
+    pub project_id: Uuid,
+    pub kind: ProjectKind,
+    pub path: String,
+    pub dir_volume_serial: u64,
+    pub dir_file_id: u64,
+    pub name: String,
+    pub status: ProjectStatus,
+    pub manifest_valid: bool,
+    pub manifest_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RouteRow {
+    pub route_name: String,
+    pub project_id: Uuid,
+    pub source: RouteSource,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustRecord {
+    pub project_id: Uuid,
+    pub trust_kind: TrustKind,
+    pub directory_volume_serial: u64,
+    pub directory_file_id: u64,
+    pub repository_identity: Option<String>,
+    pub trusted_at_unix_ms: Option<u64>,
+}
+
 impl RuntimeKind {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -307,6 +419,34 @@ enum StateCommand {
     },
     RemoveRuntime {
         runtime_id: Uuid,
+        reply: oneshot::Sender<Result<(), StateError>>,
+    },
+    ListProjects(oneshot::Sender<Result<Vec<ProjectRecord>, StateError>>),
+    UpsertProject {
+        project: ProjectRecord,
+        reply: oneshot::Sender<Result<(), StateError>>,
+    },
+    RemoveProject {
+        project_id: Uuid,
+        reply: oneshot::Sender<Result<(), StateError>>,
+    },
+    ListRoutes(oneshot::Sender<Result<Vec<RouteRow>, StateError>>),
+    SetRoute {
+        route_name: String,
+        project_id: Uuid,
+        source: RouteSource,
+        reply: oneshot::Sender<Result<(), StateError>>,
+    },
+    ClearRoutesForProject {
+        project_id: Uuid,
+        reply: oneshot::Sender<Result<(), StateError>>,
+    },
+    GetTrust {
+        project_id: Uuid,
+        reply: oneshot::Sender<Result<Option<TrustRecord>, StateError>>,
+    },
+    BindTrust {
+        trust: TrustRecord,
         reply: oneshot::Sender<Result<(), StateError>>,
     },
     Shutdown(SyncSender<Result<(), StateError>>),
@@ -383,6 +523,35 @@ fn run_worker(connection: &Connection, receiver: mpsc::Receiver<StateCommand>) {
             }
             StateCommand::RemoveRuntime { runtime_id, reply } => {
                 let _ = reply.send(remove_runtime(connection, runtime_id));
+            }
+            StateCommand::ListProjects(reply) => {
+                let _ = reply.send(list_projects(connection));
+            }
+            StateCommand::UpsertProject { project, reply } => {
+                let _ = reply.send(upsert_project(connection, &project));
+            }
+            StateCommand::RemoveProject { project_id, reply } => {
+                let _ = reply.send(remove_project(connection, project_id));
+            }
+            StateCommand::ListRoutes(reply) => {
+                let _ = reply.send(list_routes(connection));
+            }
+            StateCommand::SetRoute {
+                route_name,
+                project_id,
+                source,
+                reply,
+            } => {
+                let _ = reply.send(set_route(connection, &route_name, project_id, source));
+            }
+            StateCommand::ClearRoutesForProject { project_id, reply } => {
+                let _ = reply.send(clear_routes_for_project(connection, project_id));
+            }
+            StateCommand::GetTrust { project_id, reply } => {
+                let _ = reply.send(get_trust(connection, project_id));
+            }
+            StateCommand::BindTrust { trust, reply } => {
+                let _ = reply.send(bind_trust(connection, &trust));
             }
             StateCommand::Shutdown(reply) => {
                 let result = connection
@@ -576,6 +745,216 @@ fn runtime_kind_from_str(value: &str) -> Option<RuntimeKind> {
         "managed" => Some(RuntimeKind::Managed),
         "external" => Some(RuntimeKind::External),
         _ => None,
+    }
+}
+
+fn list_projects(connection: &Connection) -> Result<Vec<ProjectRecord>, StateError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT project_id, kind, path, dir_volume_serial, dir_file_id, name, status, \
+                    manifest_valid, manifest_reason \
+             FROM projects ORDER BY name",
+        )
+        .map_err(StateError::Repository)?;
+    let rows = statement
+        .query_map([], map_project_row)
+        .map_err(StateError::Repository)?;
+    rows.collect::<Result<_, _>>()
+        .map_err(StateError::Repository)
+}
+
+fn upsert_project(connection: &Connection, project: &ProjectRecord) -> Result<(), StateError> {
+    connection
+        .execute(
+            "INSERT INTO projects (project_id, kind, path, dir_volume_serial, dir_file_id, \
+                    name, status, manifest_valid, manifest_reason, registered_at_unix_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+             ON CONFLICT(project_id) DO UPDATE SET \
+             kind = excluded.kind, \
+             path = excluded.path, \
+             dir_volume_serial = excluded.dir_volume_serial, \
+             dir_file_id = excluded.dir_file_id, \
+             name = excluded.name, \
+             status = excluded.status, \
+             manifest_valid = excluded.manifest_valid, \
+             manifest_reason = excluded.manifest_reason",
+            params![
+                project.project_id.to_string(),
+                project_kind_str(project.kind),
+                project.path,
+                project.dir_volume_serial as i64,
+                project.dir_file_id as i64,
+                project.name,
+                project_status_str(project.status),
+                i64::from(project.manifest_valid),
+                project.manifest_reason,
+                unix_timestamp_ms()?,
+            ],
+        )
+        .map_err(StateError::Repository)?;
+    Ok(())
+}
+
+fn remove_project(connection: &Connection, project_id: Uuid) -> Result<(), StateError> {
+    connection
+        .execute(
+            "DELETE FROM projects WHERE project_id = ?1",
+            [project_id.to_string()],
+        )
+        .map_err(StateError::Repository)?;
+    Ok(())
+}
+
+fn list_routes(connection: &Connection) -> Result<Vec<RouteRow>, StateError> {
+    let mut statement = connection
+        .prepare("SELECT route_name, project_id, source FROM project_routes ORDER BY route_name")
+        .map_err(StateError::Repository)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(RouteRow {
+                route_name: row.get(0)?,
+                project_id: Uuid::parse_str(&row.get::<_, String>(1)?)
+                    .map_err(|_| rusqlite::Error::InvalidColumnName("project_id".to_owned()))?,
+                source: match row.get::<_, String>(2)?.as_str() {
+                    "derived" => RouteSource::Derived,
+                    _ => RouteSource::Explicit,
+                },
+            })
+        })
+        .map_err(StateError::Repository)?;
+    rows.collect::<Result<_, _>>()
+        .map_err(StateError::Repository)
+}
+
+fn set_route(
+    connection: &Connection,
+    route_name: &str,
+    project_id: Uuid,
+    source: RouteSource,
+) -> Result<(), StateError> {
+    connection
+        .execute(
+            "INSERT INTO project_routes (route_name, project_id, source) VALUES (?1, ?2, ?3) \
+             ON CONFLICT(route_name) DO UPDATE SET \
+             project_id = excluded.project_id, source = excluded.source",
+            params![route_name, project_id.to_string(), route_source_str(source)],
+        )
+        .map_err(StateError::Repository)?;
+    Ok(())
+}
+
+fn clear_routes_for_project(connection: &Connection, project_id: Uuid) -> Result<(), StateError> {
+    connection
+        .execute(
+            "DELETE FROM project_routes WHERE project_id = ?1",
+            [project_id.to_string()],
+        )
+        .map_err(StateError::Repository)?;
+    Ok(())
+}
+
+fn get_trust(connection: &Connection, project_id: Uuid) -> Result<Option<TrustRecord>, StateError> {
+    connection
+        .query_row(
+            "SELECT project_id, trust_kind, directory_volume_serial, directory_file_id, \
+                    repository_identity, trusted_at_unix_ms \
+             FROM project_trust WHERE project_id = ?1",
+            [project_id.to_string()],
+            |row| {
+                let trusted_at: Option<i64> = row.get(5)?;
+                Ok(TrustRecord {
+                    project_id: Uuid::parse_str(&row.get::<_, String>(0)?)
+                        .map_err(|_| rusqlite::Error::InvalidColumnName("project_id".to_owned()))?,
+                    trust_kind: match row.get::<_, String>(1)?.as_str() {
+                        "trusted" => TrustKind::Trusted,
+                        _ => TrustKind::Untrusted,
+                    },
+                    directory_volume_serial: row.get::<_, i64>(2)?.unsigned_abs() as u64,
+                    directory_file_id: row.get::<_, i64>(3)?.unsigned_abs() as u64,
+                    repository_identity: row.get(4)?,
+                    trusted_at_unix_ms: trusted_at.map(|value| value.unsigned_abs() as u64),
+                })
+            },
+        )
+        .optional()
+        .map_err(StateError::Repository)
+}
+
+fn bind_trust(connection: &Connection, trust: &TrustRecord) -> Result<(), StateError> {
+    connection
+        .execute(
+            "INSERT INTO project_trust (project_id, trust_kind, directory_volume_serial, \
+                    directory_file_id, repository_identity, trusted_at_unix_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+             ON CONFLICT(project_id) DO UPDATE SET \
+             trust_kind = excluded.trust_kind, \
+             directory_volume_serial = excluded.directory_volume_serial, \
+             directory_file_id = excluded.directory_file_id, \
+             repository_identity = excluded.repository_identity, \
+             trusted_at_unix_ms = excluded.trusted_at_unix_ms",
+            params![
+                trust.project_id.to_string(),
+                match trust.trust_kind {
+                    TrustKind::Trusted => "trusted",
+                    TrustKind::Untrusted => "untrusted",
+                },
+                trust.directory_volume_serial as i64,
+                trust.directory_file_id as i64,
+                trust.repository_identity,
+                trust.trusted_at_unix_ms.map(|v| v as i64),
+            ],
+        )
+        .map_err(StateError::Repository)?;
+    Ok(())
+}
+
+fn map_project_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectRecord> {
+    Ok(ProjectRecord {
+        project_id: Uuid::parse_str(&row.get::<_, String>(0)?)
+            .map_err(|_| rusqlite::Error::InvalidColumnName("project_id".to_owned()))?,
+        kind: match row.get::<_, String>(1)?.as_str() {
+            "parked" => ProjectKind::Parked,
+            _ => ProjectKind::Linked,
+        },
+        path: row.get(2)?,
+        dir_volume_serial: row.get::<_, i64>(3)?.unsigned_abs() as u64,
+        dir_file_id: row.get::<_, i64>(4)?.unsigned_abs() as u64,
+        name: row.get(5)?,
+        status: match row.get::<_, String>(6)?.as_str() {
+            "untrusted" => ProjectStatus::Untrusted,
+            "trusted" => ProjectStatus::Trusted,
+            "conflict" => ProjectStatus::Conflict,
+            "missing" => ProjectStatus::Missing,
+            "replaced" => ProjectStatus::Replaced,
+            _ => ProjectStatus::Unsupported,
+        },
+        manifest_valid: row.get::<_, i64>(7)? != 0,
+        manifest_reason: row.get(8)?,
+    })
+}
+
+const fn project_kind_str(kind: ProjectKind) -> &'static str {
+    match kind {
+        ProjectKind::Parked => "parked",
+        ProjectKind::Linked => "linked",
+    }
+}
+
+const fn project_status_str(status: ProjectStatus) -> &'static str {
+    match status {
+        ProjectStatus::Untrusted => "untrusted",
+        ProjectStatus::Trusted => "trusted",
+        ProjectStatus::Conflict => "conflict",
+        ProjectStatus::Missing => "missing",
+        ProjectStatus::Replaced => "replaced",
+        ProjectStatus::Unsupported => "unsupported",
+    }
+}
+
+const fn route_source_str(source: RouteSource) -> &'static str {
+    match source {
+        RouteSource::Derived => "derived",
+        RouteSource::Explicit => "explicit",
     }
 }
 
