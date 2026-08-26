@@ -7,7 +7,8 @@ use nerd_core::{
         ClientKind, ErrorCode, ErrorResponse, HandshakeRequest, HealthStatus, NetworkRepairRequest,
         NetworkSetupRequest, NetworkStatusRequest, NetworkUninstallRequest, Request,
         RequestEnvelope, Response, ResponseEnvelope, RuntimeInstallRequest, RuntimeListRequest,
-        RuntimeRemoveRequest, RuntimeSetDefaultRequest, StatusRequest, StatusResponse,
+        RuntimeRegisterExternalRequest, RuntimeRemoveRequest, RuntimeSetDefaultRequest,
+        StatusRequest, StatusResponse,
     },
 };
 use tokio::{
@@ -21,6 +22,7 @@ mod windows;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+const RUNTIME_TIMEOUT: Duration = Duration::from_secs(600);
 const RETRY_INTERVAL: Duration = Duration::from_millis(50);
 const ERROR_PIPE_BUSY: i32 = 231;
 
@@ -54,7 +56,7 @@ pub fn run_from_env() -> i32 {
         Err(error) => {
             eprintln!("nerd: {error}");
             eprintln!(
-                "usage: nerd <status|network <setup|uninstall|repair|status>|runtime <install <ver>|list|remove <id>|set-default <ver>>|--version>"
+                "usage: nerd <status|network <setup|uninstall|repair|status>|runtime <install <ver>|list|remove <id>|set-default <ver>|add <node.exe path>>|--version>"
             );
             error.exit_code()
         }
@@ -83,19 +85,33 @@ fn run_runtime(action: RuntimeAction, arg: Option<String>) -> Result<(), CliErro
                 let version = arg.ok_or(CliError::Usage)?;
                 Request::RuntimeSetDefault(RuntimeSetDefaultRequest { version })
             }
+            RuntimeAction::Add => {
+                let path = arg.ok_or(CliError::Usage)?;
+                Request::RuntimeRegisterExternal(RuntimeRegisterExternalRequest {
+                    executable_path: path,
+                    architecture: "x64".to_owned(),
+                })
+            }
+        };
+        // Installs download ~30 MiB and extract; only list/remove is quick.
+        let request_timeout = match action {
+            RuntimeAction::Install | RuntimeAction::SetDefault | RuntimeAction::Add => {
+                RUNTIME_TIMEOUT
+            }
+            _ => REQUEST_TIMEOUT,
         };
         let response = timeout(
-            REQUEST_TIMEOUT,
+            request_timeout,
             exchange_network(&mut connection.client, request),
         )
         .await
         .map_err(|_| CliError::Timeout)??;
-        print_runtime(&response);
+        print_runtime(&response)?;
         Ok(())
     })
 }
 
-fn print_runtime(response: &Response) {
+fn print_runtime(response: &Response) -> Result<(), CliError> {
     match response {
         Response::RuntimeInstall(result) => {
             if result.installed {
@@ -128,11 +144,18 @@ fn print_runtime(response: &Response) {
         Response::RuntimeSetDefault(result) => {
             println!("Default Node set to {}", result.version);
         }
+        Response::RuntimeRegisterExternal(runtime) => {
+            println!(
+                "Registered external Node {} ({})",
+                runtime.version, runtime.executable_path
+            );
+        }
         Response::Error(error) => {
-            println!("Runtime request rejected: {}", error.message);
+            return Err(map_server_error(error.clone()));
         }
         _ => println!("Unexpected runtime response."),
     }
+    Ok(())
 }
 
 fn run_network(action: NetworkAction) -> Result<(), CliError> {
@@ -534,6 +557,7 @@ enum RuntimeAction {
     List,
     Remove,
     SetDefault,
+    Add,
 }
 
 impl RuntimeAction {
@@ -543,6 +567,7 @@ impl RuntimeAction {
             "list" => Ok(Self::List),
             "remove" => Ok(Self::Remove),
             "set-default" => Ok(Self::SetDefault),
+            "add" => Ok(Self::Add),
             _ => Err(CliError::Usage),
         }
     }

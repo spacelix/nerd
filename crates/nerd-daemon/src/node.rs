@@ -163,16 +163,38 @@ impl NodeManager {
     }
 
     /// Resolve a version spec against the index to one concrete version.
+    /// Resolve a version spec to one concrete version. Prefers an already
+    /// installed compatible managed runtime before consulting the index.
+    /// LTS is exempt: only the index knows which release currently holds LTS.
     pub async fn resolve(&self, spec: &VersionSpec) -> Result<String, NodeError> {
+        if !matches!(spec, VersionSpec::Lts)
+            && let Some(installed) = self
+                .state
+                .list_runtimes()
+                .await?
+                .iter()
+                .filter(|r| r.kind == RuntimeKind::Managed)
+                .map(|r| r.version.clone())
+                .find(|v| spec_matches(spec, v))
+        {
+            return Ok(installed);
+        }
+
         let index = self.fetch_index().await?;
         match spec {
             VersionSpec::Exact(version) => {
                 let normalized = crate::version::normalize_version(version);
                 if index.iter().any(|(v, _)| *v == normalized) {
-                    Ok(normalized)
-                } else {
-                    Err(NodeError::NotFound(format!("exact version {version}")))
+                    return Ok(normalized);
                 }
+                // Support major.minor prefix declarations such as "20.11".
+                let prefix = format!("{normalized}.");
+                index
+                    .iter()
+                    .map(|(v, _)| v)
+                    .find(|v| v.starts_with(&prefix))
+                    .cloned()
+                    .ok_or_else(|| NodeError::NotFound(format!("exact version {version}")))
             }
             VersionSpec::Major(major) => {
                 let prefix = format!("{major}.");
@@ -184,18 +206,24 @@ impl NodeManager {
                     .ok_or_else(|| NodeError::NotFound(format!("major {major}")))
             }
             VersionSpec::Range(range) => {
-                let major = range.trim_start_matches(['^', '~', '>', '=', ' ']);
-                if let Ok(major) = major.parse::<u32>() {
-                    let prefix = format!("{major}.");
-                    index
-                        .iter()
-                        .map(|(v, _)| v)
-                        .find(|v| v.starts_with(&prefix))
-                        .cloned()
-                        .ok_or_else(|| NodeError::NotFound(format!("range {range}")))
-                } else {
-                    Err(NodeError::Unsupported(format!("unsupported range {range}")))
+                let body = range.trim_start_matches(['^', '~', '>', '=', ' ', 'v']);
+                // Minor-qualified ranges ("^20.11", "~20.11.1") are not
+                // supported; silently matching the whole major would be wrong.
+                if body.contains('.') {
+                    return Err(NodeError::Unsupported(format!(
+                        "unsupported range {range}; use a major such as '^20' or an exact version"
+                    )));
                 }
+                let Some(major) = body.parse::<u32>().ok() else {
+                    return Err(NodeError::Unsupported(format!("unsupported range {range}")));
+                };
+                let prefix = format!("{major}.");
+                index
+                    .iter()
+                    .map(|(v, _)| v)
+                    .find(|v| v.starts_with(&prefix))
+                    .cloned()
+                    .ok_or_else(|| NodeError::NotFound(format!("range {range}")))
             }
             VersionSpec::Lts => index
                 .iter()
@@ -205,17 +233,18 @@ impl NodeManager {
         }
     }
 
-    /// Install a managed Node version. Returns the concrete version installed.
+    /// Install a managed Node version. Accepts exact, major, LTS, or range
+    /// declarations. Prefers an already-installed compatible version.
     pub async fn install(&self, version: &str) -> Result<String, NodeError> {
-        if self.is_installed(version) {
-            let concrete = crate::version::normalize_version(version);
-            self.record_managed(&concrete).await?;
-            return Ok(concrete);
+        let spec = crate::version::parse_spec(version).ok_or_else(|| {
+            NodeError::Unsupported(format!("invalid version declaration '{version}'"))
+        })?;
+        let resolved = self.resolve(&spec).await?;
+        if self.is_installed(&resolved) {
+            self.record_managed(&resolved).await?;
+            return Ok(resolved);
         }
 
-        let resolved = self
-            .resolve(&VersionSpec::Exact(version.to_owned()))
-            .await?;
         let zip_url = format!("{NODE_BASE_URL}/v{resolved}/node-v{resolved}-win-x64.zip");
         let zip_name = format!("node-v{resolved}-win-x64.zip");
         let staging = self.staging_dir(&resolved);
@@ -256,15 +285,16 @@ impl NodeManager {
         let Some(runtime) = runtimes.iter().find(|r| r.runtime_id == runtime_id) else {
             return Ok(false);
         };
-        if runtime.kind != RuntimeKind::Managed {
-            return Ok(false);
+        // Managed: remove the on-disk directory and the inventory row.
+        if runtime.kind == RuntimeKind::Managed {
+            let normalized = crate::version::normalize_version(&runtime.version);
+            let managed = self.managed_dir_for(&normalized);
+            let canonical = managed.canonicalize().unwrap_or_else(|_| managed.clone());
+            if canonical.starts_with(self.managed_root()) {
+                std::fs::remove_dir_all(&canonical)?;
+            }
         }
-        let normalized = crate::version::normalize_version(&runtime.version);
-        let managed = self.managed_dir_for(&normalized);
-        let canonical = managed.canonicalize().unwrap_or_else(|_| managed.clone());
-        if canonical.starts_with(self.managed_root()) {
-            let _ = std::fs::remove_dir_all(&canonical);
-        }
+        // External: remove only the local reference (never the on-disk runtime).
         self.state.remove_runtime(runtime_id).await?;
         Ok(true)
     }
@@ -279,6 +309,23 @@ impl NodeManager {
         executable_path: &Path,
         architecture: &str,
     ) -> Result<RuntimeRecord, NodeError> {
+        // Sanity gate before probing: the caller selects the binary, but Nerd
+        // only accepts an absolute path to a node.exe that exists.
+        if !executable_path.is_absolute() {
+            return Err(NodeError::Unsupported(
+                "external Node path must be absolute".to_owned(),
+            ));
+        }
+        if executable_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| !name.eq_ignore_ascii_case("node.exe"))
+            .unwrap_or(true)
+        {
+            return Err(NodeError::Unsupported(
+                "external runtime must point at node.exe".to_owned(),
+            ));
+        }
         let version = probe_version(executable_path)
             .ok_or_else(|| NodeError::Degraded("node.exe did not report a version".to_owned()))?;
         let identity = binary_identity(executable_path)?;
@@ -332,6 +379,20 @@ impl NodeManager {
         })?;
         let normalized = crate::version::normalize_version(&reported);
         let identity = binary_identity(&node)?;
+        // Reuse an existing managed record for the same tool+version so
+        // reinstalls do not grow duplicate inventory rows.
+        if let Some(existing) =
+            self.state.list_runtimes().await?.into_iter().find(|r| {
+                r.kind == RuntimeKind::Managed && r.tool == "node" && r.version == normalized
+            })
+        {
+            let mut record = existing;
+            record.executable_path = node.to_string_lossy().into_owned();
+            record.binary_identity = identity;
+            record.status = RuntimeStatus::Ready;
+            self.state.register_runtime(&record).await?;
+            return Ok(());
+        }
         let record = RuntimeRecord {
             runtime_id: Uuid::new_v4(),
             kind: RuntimeKind::Managed,
@@ -397,7 +458,12 @@ impl NodeManager {
                 }
             })
             .ok_or(NodeError::Checksum)?;
-        let actual = hash_file(archive_path)?;
+        let actual = {
+            let archive_path = archive_path.to_owned();
+            tokio::task::spawn_blocking(move || hash_file(&archive_path))
+                .await
+                .map_err(|error| NodeError::Join(error.to_string()))?
+        }?;
         if actual != expected {
             Err(NodeError::Checksum)
         } else {
@@ -432,6 +498,42 @@ pub async fn discover_external() -> Vec<(PathBuf, String)> {
     })
     .await
     .unwrap_or_default()
+}
+
+/// Whether a concrete version satisfies a version spec.
+fn spec_matches(spec: &VersionSpec, version: &str) -> bool {
+    let normalized = crate::version::normalize_version(version);
+    match spec {
+        VersionSpec::Exact(exact) => {
+            let wanted = crate::version::normalize_version(exact);
+            // Two-part declarations such as "20.11" match any installed 20.11.x.
+            if wanted.matches('.').count() == 1 {
+                normalized.starts_with(&format!("{wanted}."))
+            } else {
+                normalized == wanted
+            }
+        }
+        VersionSpec::Major(major) => {
+            normalized
+                .split('.')
+                .next()
+                .and_then(|part| part.parse::<u32>().ok())
+                == Some(*major)
+        }
+        VersionSpec::Lts => true,
+        VersionSpec::Range(range) => {
+            let major = range.trim_start_matches(['^', '~', '>', '=', ' ', 'v']);
+            let Some(major_num) = major.split('.').next().and_then(|p| p.parse::<u32>().ok())
+            else {
+                return false;
+            };
+            normalized
+                .split('.')
+                .next()
+                .and_then(|part| part.parse::<u32>().ok())
+                == Some(major_num)
+        }
+    }
 }
 
 fn known_node_candidates() -> Vec<PathBuf> {
