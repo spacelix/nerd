@@ -56,7 +56,7 @@ pub fn run_from_env() -> i32 {
         Err(error) => {
             eprintln!("nerd: {error}");
             eprintln!(
-                "usage: nerd <status|network <setup|uninstall|repair|status>|runtime <install <ver>|list|remove <id>|set-default <ver>>|--version>"
+                "usage: nerd <status|network <setup|uninstall|repair|status>|runtime <install <ver>|list|remove <id>|set-default <ver>|add <node.exe path>>|--version>"
             );
             error.exit_code()
         }
@@ -151,7 +151,7 @@ fn print_runtime(response: &Response) -> Result<(), CliError> {
             );
         }
         Response::Error(error) => {
-            return Err(CliError::Server(error.clone()));
+            return Err(map_server_error(error.clone()));
         }
         _ => println!("Unexpected runtime response."),
     }
