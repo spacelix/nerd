@@ -13,7 +13,8 @@ use nerd_core::{
     ipc::{
         DaemonHealth, DaemonIdentity, DataPaths, ErrorCode, ErrorResponse, HandshakeResponse,
         HealthComponent, HealthComponentName, HealthStatus, ProcessResources, ProjectListResponse,
-        ProjectOpResponse, ProjectRouteResponse, ProjectTrustResponse, ProjectUnlinkResponse,
+        ProjectLogsResponse, ProjectOpResponse, ProjectRouteResponse, ProjectRunStatus,
+        ProjectStartResponse, ProjectStopResponse, ProjectTrustResponse, ProjectUnlinkResponse,
         ProjectUnparkResponse, Request, RequestEnvelope, Response, ResponseEnvelope,
         RuntimeInstallResponse, RuntimeListResponse, RuntimeRemoveResponse,
         RuntimeSetDefaultResponse, StatusResponse,
@@ -30,9 +31,11 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::{
+    control::ControlManager,
     logging::LogHealthHandle,
     node::NodeManager,
     paths::AppPaths,
+    preflight::PreflightService,
     project::{ProjectError, ProjectService},
     setup::{NetworkRuntime, NetworkSetup, SetupError},
     state::{RuntimeKind, RuntimeRecord, SUPPORTED_SCHEMA_VERSION, StateClient},
@@ -59,6 +62,7 @@ pub struct DaemonContext {
     network: NetworkSetup,
     node: NodeManager,
     projects: ProjectService,
+    control: Arc<ControlManager>,
 }
 
 impl DaemonContext {
@@ -69,15 +73,22 @@ impl DaemonContext {
         logging: LogHealthHandle,
         runtime: std::sync::Arc<NetworkRuntime>,
     ) -> Self {
+        let node = NodeManager::new(paths.clone(), state.clone());
+        let projects = ProjectService::new(paths.clone(), state.clone());
+        let control = Arc::new(ControlManager::new(
+            PreflightService::new(state.clone(), node.clone()),
+            node.clone(),
+        ));
         Self {
             instance_id,
             started_at: Instant::now(),
             paths: paths.clone(),
             state: state.clone(),
             logging,
-            network: NetworkSetup::new(paths.clone(), runtime),
-            node: NodeManager::new(paths.clone(), state.clone()),
-            projects: ProjectService::new(paths, state),
+            network: NetworkSetup::new(paths, runtime),
+            node,
+            projects,
+            control,
         }
     }
 
@@ -547,6 +558,67 @@ async fn handle_connection(
                 }
                 Err(error) => Response::Error(project_error(error)),
             },
+            Request::ProjectStart(request) => {
+                match context.control.start(&request.name, false).await {
+                    Ok((project_id, port, _)) => Response::ProjectStart(ProjectStartResponse {
+                        project_id,
+                        port,
+                        requires_approval: false,
+                    }),
+                    Err(error) => Response::Error(project_error_from_preflight(error)),
+                }
+            }
+            Request::ProjectStop(request) => {
+                let project_id = context
+                    .projects
+                    .detail(&request.name)
+                    .await
+                    .ok()
+                    .map(|record| record.project_id);
+                let stopped = project_id
+                    .map(|id| context.control.stop(id))
+                    .unwrap_or(false);
+                Response::ProjectStop(ProjectStopResponse { stopped })
+            }
+            Request::ProjectStatus(request) => {
+                let project_id = context
+                    .projects
+                    .detail(&request.name)
+                    .await
+                    .ok()
+                    .map(|record| record.project_id);
+                let snapshot = project_id.and_then(|id| context.control.snapshot(id));
+                match snapshot {
+                    Some(snapshot) => Response::ProjectStatus(ProjectRunStatus {
+                        project_id: snapshot.project_id,
+                        state: snapshot.state.as_str().to_owned(),
+                        port: snapshot.port,
+                        failure: snapshot.failure,
+                    }),
+                    None => Response::Error(ErrorResponse::new(
+                        ErrorCode::InvalidRequest,
+                        "project is not running",
+                        false,
+                    )),
+                }
+            }
+            Request::ProjectLogs(request) => {
+                let project_id = context
+                    .projects
+                    .detail(&request.name)
+                    .await
+                    .ok()
+                    .map(|record| record.project_id);
+                let logs = project_id.and_then(|id| context.control.logs(id));
+                match logs {
+                    Some(logs) => Response::ProjectLogs(ProjectLogsResponse { logs }),
+                    None => Response::Error(ErrorResponse::new(
+                        ErrorCode::InvalidRequest,
+                        "project has no captured logs",
+                        false,
+                    )),
+                }
+            }
             Request::Handshake(_) => Response::Error(ErrorResponse::new(
                 ErrorCode::InvalidRequest,
                 "handshake is already complete",
@@ -673,6 +745,17 @@ fn project_error(error: ProjectError) -> ErrorResponse {
         E::NotAProject(_) | E::NotFound(_) | E::Unsupported(_) | E::Manifest(_) => {
             ErrorCode::InvalidRequest
         }
+        _ => ErrorCode::Internal,
+    };
+    ErrorResponse::new(code, message, false)
+}
+
+fn project_error_from_preflight(error: crate::preflight::PreflightError) -> ErrorResponse {
+    use crate::preflight::PreflightError as E;
+    let message = error.to_string();
+    let code = match &error {
+        E::NotFound(_) | E::MissingManifest(_) | E::NoCommand(_) => ErrorCode::InvalidRequest,
+        E::Degraded(_) => ErrorCode::RuntimeDegraded,
         _ => ErrorCode::Internal,
     };
     ErrorResponse::new(code, message, false)

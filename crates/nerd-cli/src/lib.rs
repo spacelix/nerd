@@ -6,8 +6,8 @@ use nerd_core::{
     ipc::{
         ClientKind, ErrorCode, ErrorResponse, HandshakeRequest, HealthStatus, NetworkRepairRequest,
         NetworkSetupRequest, NetworkStatusRequest, NetworkUninstallRequest, ProjectListRequest,
-        ProjectNameRequest, ProjectPathRequest, ProjectRouteRequest, Request, RequestEnvelope,
-        Response, ResponseEnvelope, RuntimeInstallRequest, RuntimeListRequest,
+        ProjectNameRequest, ProjectPathRequest, ProjectRouteRequest, ProjectStartRequest, Request,
+        RequestEnvelope, Response, ResponseEnvelope, RuntimeInstallRequest, RuntimeListRequest,
         RuntimeRegisterExternalRequest, RuntimeRemoveRequest, RuntimeSetDefaultRequest,
         StatusRequest, StatusResponse,
     },
@@ -200,6 +200,18 @@ fn run_project(action: ProjectAction, mut args: Vec<String>) -> Result<(), CliEr
                 let name = args.pop().expect("checked length");
                 Request::ProjectRoute(ProjectRouteRequest { name, route })
             }
+            ProjectAction::Start => Request::ProjectStart(ProjectStartRequest {
+                name: args.pop().ok_or(CliError::Usage)?,
+            }),
+            ProjectAction::Stop => Request::ProjectStop(ProjectNameRequest {
+                name: args.pop().ok_or(CliError::Usage)?,
+            }),
+            ProjectAction::Status => Request::ProjectStatus(ProjectNameRequest {
+                name: args.pop().ok_or(CliError::Usage)?,
+            }),
+            ProjectAction::Logs => Request::ProjectLogs(ProjectNameRequest {
+                name: args.pop().ok_or(CliError::Usage)?,
+            }),
         };
         // Park/link trigger a full reconciliation scan; give them headroom.
         let request_timeout = matches!(
@@ -209,6 +221,8 @@ fn run_project(action: ProjectAction, mut args: Vec<String>) -> Result<(), CliEr
                 | ProjectAction::Link
                 | ProjectAction::Trust
                 | ProjectAction::Route
+                | ProjectAction::Start
+                | ProjectAction::Stop
         )
         .then_some(RUNTIME_TIMEOUT)
         .unwrap_or(REQUEST_TIMEOUT);
@@ -254,6 +268,38 @@ fn print_project(response: &Response) -> Result<(), CliError> {
         }
         Response::ProjectRoute(result) => {
             println!("Route set to {}.", result.route);
+        }
+        Response::ProjectStart(result) => {
+            if result.requires_approval {
+                println!(
+                    "Project requires Trust and Start approval (id {}).",
+                    result.project_id
+                );
+            } else {
+                println!(
+                    "Started project {} on internal port {}.",
+                    result.project_id, result.port
+                );
+            }
+        }
+        Response::ProjectStop(result) => {
+            if result.stopped {
+                println!("Project stopped.");
+            } else {
+                println!("Project was not running.");
+            }
+        }
+        Response::ProjectStatus(result) => {
+            match result.port {
+                Some(port) => println!("State: {} (port {})", result.state, port),
+                None => println!("State: {}", result.state),
+            }
+            if let Some(failure) = &result.failure {
+                println!("Failure: {failure}");
+            }
+        }
+        Response::ProjectLogs(result) => {
+            print!("{}", result.logs);
         }
         Response::Error(error) => {
             return Err(map_server_error(error.clone()));
@@ -735,6 +781,10 @@ enum ProjectAction {
     Detail,
     Trust,
     Route,
+    Start,
+    Stop,
+    Status,
+    Logs,
 }
 
 impl RuntimeAction {
@@ -761,6 +811,10 @@ impl ProjectAction {
             "detail" => Ok(Self::Detail),
             "trust" => Ok(Self::Trust),
             "route" => Ok(Self::Route),
+            "start" => Ok(Self::Start),
+            "stop" => Ok(Self::Stop),
+            "status" => Ok(Self::Status),
+            "logs" => Ok(Self::Logs),
             _ => Err(CliError::Usage),
         }
     }
