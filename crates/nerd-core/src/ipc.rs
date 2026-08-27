@@ -37,6 +37,10 @@ pub enum Request {
     ProjectDetail(ProjectNameRequest),
     ProjectTrust(ProjectNameRequest),
     ProjectRoute(ProjectRouteRequest),
+    ProjectStart(ProjectStartRequest),
+    ProjectStop(ProjectNameRequest),
+    ProjectStatus(ProjectNameRequest),
+    ProjectLogs(ProjectNameRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -98,6 +102,10 @@ pub enum Response {
     ProjectDetail(crate::runtime::ProjectInfo),
     ProjectTrust(ProjectTrustResponse),
     ProjectRoute(ProjectRouteResponse),
+    ProjectStart(ProjectStartResponse),
+    ProjectStop(ProjectStopResponse),
+    ProjectStatus(ProjectRunStatus),
+    ProjectLogs(ProjectLogsResponse),
     Error(ErrorResponse),
 }
 
@@ -405,6 +413,43 @@ pub struct ProjectTrustResponse {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectRouteResponse {
     pub route: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectStartRequest {
+    #[serde(deserialize_with = "nonempty_string")]
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectStartResponse {
+    pub project_id: Uuid,
+    pub port: u16,
+    pub requires_approval: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectStopResponse {
+    pub stopped: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectRunStatus {
+    pub project_id: Uuid,
+    pub state: String,
+    pub port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectLogsResponse {
+    pub logs: String,
 }
 
 fn positive_u16<'de, D>(deserializer: D) -> Result<u16, D::Error>

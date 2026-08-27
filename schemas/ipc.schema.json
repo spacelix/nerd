@@ -205,6 +205,42 @@
             "type": { "const": "project_route" },
             "payload": { "$ref": "#/$defs/projectRouteRequest" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_start" },
+            "payload": { "$ref": "#/$defs/projectStartRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_stop" },
+            "payload": { "$ref": "#/$defs/projectNameRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_status" },
+            "payload": { "$ref": "#/$defs/projectNameRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_logs" },
+            "payload": { "$ref": "#/$defs/projectNameRequest" }
+          }
         }
       ]
     },
@@ -315,6 +351,51 @@
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "route": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectStartRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectStartResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "port", "requiresApproval"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "requiresApproval": { "type": "boolean" }
+      }
+    },
+    "projectStopResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stopped"],
+      "properties": {
+        "stopped": { "type": "boolean" }
+      }
+    },
+    "projectRunStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "state"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "state": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "failure": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "projectLogsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logs"],
+      "properties": {
+        "logs": { "type": "string" }
       }
     },
     "projectOpResponse": {
@@ -582,6 +663,42 @@
           "properties": {
             "type": { "const": "project_route" },
             "payload": { "$ref": "#/$defs/projectRouteResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_start" },
+            "payload": { "$ref": "#/$defs/projectStartResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_stop" },
+            "payload": { "$ref": "#/$defs/projectStopResponse" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_status" },
+            "payload": { "$ref": "#/$defs/projectRunStatus" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "project_logs" },
+            "payload": { "$ref": "#/$defs/projectLogsResponse" }
           }
         },
         {

@@ -1,18 +1,25 @@
 pub mod cert;
+pub mod control;
 pub mod dns;
 pub mod exec;
+pub mod framework;
 pub mod identity;
 pub mod instance;
 pub mod ipc;
+pub mod job;
+pub mod lifecycle;
 pub mod location;
 pub mod logging;
 pub mod node;
 pub mod package_manager;
 pub mod paths;
+pub mod port_allocator;
+pub mod preflight;
 pub mod project;
 pub mod setup;
 pub mod shutdown;
 pub mod state;
+pub mod supervisor;
 pub mod version;
 pub mod watcher;
 
