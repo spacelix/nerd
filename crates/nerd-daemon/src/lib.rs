@@ -16,10 +16,12 @@ pub mod paths;
 pub mod port_allocator;
 pub mod preflight;
 pub mod project;
+pub mod proxy;
 pub mod setup;
 pub mod shutdown;
 pub mod state;
 pub mod supervisor;
+pub mod tls;
 pub mod version;
 pub mod watcher;
 
@@ -158,6 +160,7 @@ async fn run_service(context: DaemonContext, security: &SecurityDescriptor) -> S
     };
     tokio::pin!(signal);
     let (shutdown_sender, shutdown_receiver) = watch::channel(None);
+    context.start_proxy();
     let server = ipc::serve(context, security, shutdown_receiver);
     tokio::pin!(server);
 

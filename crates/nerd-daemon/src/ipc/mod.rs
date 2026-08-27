@@ -37,6 +37,7 @@ use crate::{
     paths::AppPaths,
     preflight::PreflightService,
     project::{ProjectError, ProjectService},
+    proxy::{ProxyContext, serve as serve_proxy},
     setup::{NetworkRuntime, NetworkSetup, SetupError},
     state::{RuntimeKind, RuntimeRecord, SUPPORTED_SCHEMA_VERSION, StateClient},
     version::parse_spec,
@@ -76,6 +77,7 @@ impl DaemonContext {
         let node = NodeManager::new(paths.clone(), state.clone());
         let projects = ProjectService::new(paths.clone(), state.clone());
         let control = Arc::new(ControlManager::new(
+            state.clone(),
             PreflightService::new(state.clone(), node.clone()),
             node.clone(),
         ));
@@ -90,6 +92,25 @@ impl DaemonContext {
             projects,
             control,
         }
+    }
+
+    /// Start the loopback reverse proxy (HTTP 80 / HTTPS 443). Binding failure
+    /// (a foreign listener) is reported through tracing, never mutated.
+    pub fn start_proxy(&self) {
+        let ctx = Arc::new(ProxyContext {
+            control: Arc::clone(&self.control),
+            paths: self.paths.clone(),
+        });
+        tokio::spawn(async move {
+            let http_addr = "127.0.0.1:80".parse().expect("loopback http");
+            let https_addr = "127.0.0.1:443".parse().expect("loopback https");
+            match serve_proxy(http_addr, https_addr, ctx).await {
+                Ok(()) => {}
+                Err(error) => {
+                    tracing::warn!(error = %error, "reverse proxy stopped; port 80/443 may be in use");
+                }
+            }
+        });
     }
 
     async fn status(&self) -> StatusResponse {
