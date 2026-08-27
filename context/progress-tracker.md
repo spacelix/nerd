@@ -5,9 +5,9 @@ Update this file whenever feature state changes. Only one feature may be `in pro
 ## Current Status
 
 - Phase: Phase 3 - Runtimes and Package Managers
-- In progress: None (Features 01-03 complete)
-- Last completed: Feature 03 - Node runtime and package managers
-- Next: Start Feature 04 (Project discovery and configuration)
+- In progress: None (Features 01-05 complete)
+- Last completed: Feature 05 - Frameworks and process supervision
+- Next: Start Feature 06 (Reverse proxy)
 
 ## Features
 
@@ -16,8 +16,8 @@ Update this file whenever feature state changes. Only one feature may be `in pro
 | 01 | Foundation, daemon, state, IPC | `features/01-foundation-daemon-ipc.md` | complete |
 | 02 | Windows DNS, HTTPS, privilege setup | `features/02-windows-dns-https.md` | complete |
 | 03 | Node runtime and package managers | `features/03-node-runtime-package-managers.md` | complete |
-| 04 | Project discovery and configuration | `features/04-project-discovery-config.md` | planned |
-| 05 | Frameworks and process supervision | `features/05-frameworks-process-supervision.md` | planned |
+| 04 | Project discovery and configuration | `features/04-project-discovery-config.md` | complete |
+| 05 | Frameworks and process supervision | `features/05-frameworks-process-supervision.md` | complete |
 | 06 | Reverse proxy | `features/06-reverse-proxy.md` | planned |
 | 07 | Desktop, tray, CLI | `features/07-desktop-tray-cli.md` | planned |
 | 08 | Request Inspector | `features/08-request-inspector.md` | planned |
