@@ -29,6 +29,14 @@ pub enum Request {
     RuntimeRemove(RuntimeRemoveRequest),
     RuntimeSetDefault(RuntimeSetDefaultRequest),
     RuntimeRegisterExternal(RuntimeRegisterExternalRequest),
+    ProjectPark(ProjectPathRequest),
+    ProjectUnpark(ProjectPathRequest),
+    ProjectLink(ProjectPathRequest),
+    ProjectUnlink(ProjectNameRequest),
+    ProjectList(ProjectListRequest),
+    ProjectDetail(ProjectNameRequest),
+    ProjectTrust(ProjectNameRequest),
+    ProjectRoute(ProjectRouteRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -82,6 +90,14 @@ pub enum Response {
     RuntimeRemove(RuntimeRemoveResponse),
     RuntimeSetDefault(RuntimeSetDefaultResponse),
     RuntimeRegisterExternal(crate::runtime::RuntimeInfo),
+    ProjectPark(ProjectOpResponse),
+    ProjectUnpark(ProjectUnparkResponse),
+    ProjectLink(crate::runtime::ProjectInfo),
+    ProjectUnlink(ProjectUnlinkResponse),
+    ProjectList(ProjectListResponse),
+    ProjectDetail(crate::runtime::ProjectInfo),
+    ProjectTrust(ProjectTrustResponse),
+    ProjectRoute(ProjectRouteResponse),
     Error(ErrorResponse),
 }
 
@@ -322,6 +338,73 @@ pub struct RuntimeRegisterExternalRequest {
     pub executable_path: String,
     #[serde(deserialize_with = "nonempty_string")]
     pub architecture: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectPathRequest {
+    #[serde(deserialize_with = "nonempty_string")]
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectNameRequest {
+    #[serde(deserialize_with = "nonempty_string")]
+    pub name: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectListRequest {}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectRouteRequest {
+    #[serde(deserialize_with = "nonempty_string")]
+    pub name: String,
+    #[serde(deserialize_with = "nonempty_string")]
+    pub route: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectOpResponse {
+    pub project_id: Uuid,
+    #[serde(deserialize_with = "nonempty_string")]
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectUnparkResponse {
+    #[serde(deserialize_with = "nonnegative_u32")]
+    pub removed_projects: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectUnlinkResponse {
+    pub removed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectListResponse {
+    pub projects: Vec<crate::runtime::ProjectInfo>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectTrustResponse {
+    pub project_id: Uuid,
+    pub trusted: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectRouteResponse {
+    pub route: String,
 }
 
 fn positive_u16<'de, D>(deserializer: D) -> Result<u16, D::Error>

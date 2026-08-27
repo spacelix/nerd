@@ -3,6 +3,7 @@ mod framing;
 use std::{
     collections::BTreeSet,
     fmt, io,
+    path::Path,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -11,9 +12,11 @@ use nerd_core::{
     APPLICATION_VERSION, IPC_PROTOCOL_VERSION, PIPE_NAME,
     ipc::{
         DaemonHealth, DaemonIdentity, DataPaths, ErrorCode, ErrorResponse, HandshakeResponse,
-        HealthComponent, HealthComponentName, HealthStatus, ProcessResources, Request,
-        RequestEnvelope, Response, ResponseEnvelope, RuntimeInstallResponse, RuntimeListResponse,
-        RuntimeRemoveResponse, RuntimeSetDefaultResponse, StatusResponse,
+        HealthComponent, HealthComponentName, HealthStatus, ProcessResources, ProjectListResponse,
+        ProjectOpResponse, ProjectRouteResponse, ProjectTrustResponse, ProjectUnlinkResponse,
+        ProjectUnparkResponse, Request, RequestEnvelope, Response, ResponseEnvelope,
+        RuntimeInstallResponse, RuntimeListResponse, RuntimeRemoveResponse,
+        RuntimeSetDefaultResponse, StatusResponse,
     },
 };
 use serde::Deserialize;
@@ -30,6 +33,7 @@ use crate::{
     logging::LogHealthHandle,
     node::NodeManager,
     paths::AppPaths,
+    project::{ProjectError, ProjectService},
     setup::{NetworkRuntime, NetworkSetup, SetupError},
     state::{RuntimeKind, RuntimeRecord, SUPPORTED_SCHEMA_VERSION, StateClient},
     version::parse_spec,
@@ -54,6 +58,7 @@ pub struct DaemonContext {
     logging: LogHealthHandle,
     network: NetworkSetup,
     node: NodeManager,
+    projects: ProjectService,
 }
 
 impl DaemonContext {
@@ -71,7 +76,8 @@ impl DaemonContext {
             state: state.clone(),
             logging,
             network: NetworkSetup::new(paths.clone(), runtime),
-            node: NodeManager::new(paths, state),
+            node: NodeManager::new(paths.clone(), state.clone()),
+            projects: ProjectService::new(paths, state),
         }
     }
 
@@ -468,6 +474,79 @@ async fn handle_connection(
                     Err(error) => Response::Error(node_error(error)),
                 }
             }
+            Request::ProjectPark(request) => {
+                match context.projects.park(Path::new(&request.path)).await {
+                    Ok(path) => Response::ProjectPark(ProjectOpResponse {
+                        project_id: Uuid::nil(),
+                        path: path.to_string_lossy().into_owned(),
+                    }),
+                    Err(error) => Response::Error(project_error(error)),
+                }
+            }
+            Request::ProjectUnpark(request) => {
+                match context.projects.unpark(Path::new(&request.path)).await {
+                    Ok(removed) => Response::ProjectUnpark(ProjectUnparkResponse {
+                        removed_projects: removed as u32,
+                    }),
+                    Err(error) => Response::Error(project_error(error)),
+                }
+            }
+            Request::ProjectLink(request) => {
+                match context.projects.link(Path::new(&request.path)).await {
+                    Ok(record) => {
+                        let routes = routes_map(&context.state).await;
+                        Response::ProjectLink(into_project_info(record, &routes))
+                    }
+                    Err(error) => Response::Error(project_error(error)),
+                }
+            }
+            Request::ProjectUnlink(request) => match context.projects.unlink(&request.name).await {
+                Ok(removed) => Response::ProjectUnlink(ProjectUnlinkResponse { removed }),
+                Err(error) => Response::Error(project_error(error)),
+            },
+            Request::ProjectList(_) => match context.projects.list().await {
+                Ok(records) => {
+                    let routes = routes_map(&context.state).await;
+                    let mut projects = Vec::with_capacity(records.len());
+                    for record in records {
+                        projects.push(into_project_info(record, &routes));
+                    }
+                    Response::ProjectList(ProjectListResponse { projects })
+                }
+                Err(error) => Response::Error(project_error(error)),
+            },
+            Request::ProjectDetail(request) => match context.projects.detail(&request.name).await {
+                Ok(record) => {
+                    let routes = routes_map(&context.state).await;
+                    Response::ProjectDetail(into_project_info(record, &routes))
+                }
+                Err(error) => Response::Error(project_error(error)),
+            },
+            Request::ProjectTrust(request) => match context.projects.detail(&request.name).await {
+                Ok(record) => match context.projects.bind_trust(record.project_id).await {
+                    Ok(()) => Response::ProjectTrust(ProjectTrustResponse {
+                        project_id: record.project_id,
+                        trusted: true,
+                    }),
+                    Err(error) => Response::Error(project_error(error)),
+                },
+                Err(error) => Response::Error(project_error(error)),
+            },
+            Request::ProjectRoute(request) => match context.projects.detail(&request.name).await {
+                Ok(record) => {
+                    match context
+                        .projects
+                        .set_explicit_route(record.project_id, &request.route)
+                        .await
+                    {
+                        Ok(()) => Response::ProjectRoute(ProjectRouteResponse {
+                            route: request.route.clone(),
+                        }),
+                        Err(error) => Response::Error(project_error(error)),
+                    }
+                }
+                Err(error) => Response::Error(project_error(error)),
+            },
             Request::Handshake(_) => Response::Error(ErrorResponse::new(
                 ErrorCode::InvalidRequest,
                 "handshake is already complete",
@@ -585,6 +664,61 @@ fn network_error(error: SetupError) -> ErrorResponse {
 fn state_error(error: crate::state::StateError) -> ErrorResponse {
     let message = error.to_string();
     ErrorResponse::new(ErrorCode::Internal, message, false)
+}
+
+fn project_error(error: ProjectError) -> ErrorResponse {
+    use crate::project::ProjectError as E;
+    let message = error.to_string();
+    let code = match &error {
+        E::NotAProject(_) | E::NotFound(_) | E::Unsupported(_) | E::Manifest(_) => {
+            ErrorCode::InvalidRequest
+        }
+        _ => ErrorCode::Internal,
+    };
+    ErrorResponse::new(code, message, false)
+}
+
+fn into_project_info(
+    record: crate::state::ProjectRecord,
+    routes: &std::collections::HashMap<Uuid, String>,
+) -> nerd_core::runtime::ProjectInfo {
+    let route_name = routes.get(&record.project_id).cloned();
+    nerd_core::runtime::ProjectInfo {
+        project_id: record.project_id,
+        kind: match record.kind {
+            crate::state::ProjectKind::Parked => nerd_core::runtime::ProjectKind::Parked,
+            crate::state::ProjectKind::Linked => nerd_core::runtime::ProjectKind::Linked,
+        },
+        path: record.path,
+        name: record.name,
+        status: match record.status {
+            crate::state::ProjectStatus::Untrusted => nerd_core::runtime::ProjectStatus::Untrusted,
+            crate::state::ProjectStatus::Trusted => nerd_core::runtime::ProjectStatus::Trusted,
+            crate::state::ProjectStatus::Conflict => nerd_core::runtime::ProjectStatus::Conflict,
+            crate::state::ProjectStatus::Missing => nerd_core::runtime::ProjectStatus::Missing,
+            crate::state::ProjectStatus::Replaced => nerd_core::runtime::ProjectStatus::Replaced,
+            crate::state::ProjectStatus::Unsupported => {
+                nerd_core::runtime::ProjectStatus::Unsupported
+            }
+        },
+        manifest_valid: record.manifest_valid,
+        manifest_reason: record.manifest_reason,
+        route_name,
+    }
+}
+
+async fn routes_map(state: &StateClient) -> std::collections::HashMap<Uuid, String> {
+    state
+        .list_routes()
+        .await
+        .ok()
+        .map(|routes| {
+            routes
+                .into_iter()
+                .map(|route| (route.project_id, route.route_name))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn node_error(error: crate::node::NodeError) -> ErrorResponse {

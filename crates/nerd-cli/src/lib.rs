@@ -5,8 +5,9 @@ use nerd_core::{
     codec::{FRAME_PREFIX_BYTES, MAX_FRAME_BYTES, decode_payload, encode_frame},
     ipc::{
         ClientKind, ErrorCode, ErrorResponse, HandshakeRequest, HealthStatus, NetworkRepairRequest,
-        NetworkSetupRequest, NetworkStatusRequest, NetworkUninstallRequest, Request,
-        RequestEnvelope, Response, ResponseEnvelope, RuntimeInstallRequest, RuntimeListRequest,
+        NetworkSetupRequest, NetworkStatusRequest, NetworkUninstallRequest, ProjectListRequest,
+        ProjectNameRequest, ProjectPathRequest, ProjectRouteRequest, Request, RequestEnvelope,
+        Response, ResponseEnvelope, RuntimeInstallRequest, RuntimeListRequest,
         RuntimeRegisterExternalRequest, RuntimeRemoveRequest, RuntimeSetDefaultRequest,
         StatusRequest, StatusResponse,
     },
@@ -53,10 +54,17 @@ pub fn run_from_env() -> i32 {
                 error.exit_code()
             }
         },
+        Ok(Command::Project { action, args }) => match run_project(action, args) {
+            Ok(()) => 0,
+            Err(error) => {
+                eprintln!("nerd: {error}");
+                error.exit_code()
+            }
+        },
         Err(error) => {
             eprintln!("nerd: {error}");
             eprintln!(
-                "usage: nerd <status|network <setup|uninstall|repair|status>|runtime <install <ver>|list|remove <id>|set-default <ver>|add <node.exe path>>|--version>"
+                "usage: nerd <status|network <setup|uninstall|repair|status>|runtime <install <ver>|list|remove <id>|set-default <ver>|add <node.exe path>>|project <park <dir>|unpark <dir>|link <dir>|unlink <name>|list|detail <name>|trust <name>|route <name> <dns>>|--version>"
             );
             error.exit_code()
         }
@@ -156,6 +164,136 @@ fn print_runtime(response: &Response) -> Result<(), CliError> {
         _ => println!("Unexpected runtime response."),
     }
     Ok(())
+}
+
+fn run_project(action: ProjectAction, mut args: Vec<String>) -> Result<(), CliError> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(CliError::Runtime)?;
+    runtime.block_on(async move {
+        let mut connection = connect().await?;
+        let request = match action {
+            ProjectAction::Park | ProjectAction::Unpark | ProjectAction::Link => {
+                let path = args.pop().ok_or(CliError::Usage)?;
+                match action {
+                    ProjectAction::Park => Request::ProjectPark(ProjectPathRequest { path }),
+                    ProjectAction::Unpark => Request::ProjectUnpark(ProjectPathRequest { path }),
+                    _ => Request::ProjectLink(ProjectPathRequest { path }),
+                }
+            }
+            ProjectAction::Unlink => Request::ProjectUnlink(ProjectNameRequest {
+                name: args.pop().ok_or(CliError::Usage)?,
+            }),
+            ProjectAction::List => Request::ProjectList(ProjectListRequest {}),
+            ProjectAction::Detail => Request::ProjectDetail(ProjectNameRequest {
+                name: args.pop().ok_or(CliError::Usage)?,
+            }),
+            ProjectAction::Trust => Request::ProjectTrust(ProjectNameRequest {
+                name: args.pop().ok_or(CliError::Usage)?,
+            }),
+            ProjectAction::Route => {
+                if args.len() != 2 {
+                    return Err(CliError::Usage);
+                }
+                let route = args.pop().expect("checked length");
+                let name = args.pop().expect("checked length");
+                Request::ProjectRoute(ProjectRouteRequest { name, route })
+            }
+        };
+        // Park/link trigger a full reconciliation scan; give them headroom.
+        let request_timeout = matches!(
+            action,
+            ProjectAction::Park
+                | ProjectAction::Unpark
+                | ProjectAction::Link
+                | ProjectAction::Trust
+                | ProjectAction::Route
+        )
+        .then_some(RUNTIME_TIMEOUT)
+        .unwrap_or(REQUEST_TIMEOUT);
+        let response = timeout(
+            request_timeout,
+            exchange_network(&mut connection.client, request),
+        )
+        .await
+        .map_err(|_| CliError::Timeout)??;
+        print_project(&response)?;
+        Ok(())
+    })
+}
+
+fn print_project(response: &Response) -> Result<(), CliError> {
+    match response {
+        Response::ProjectPark(result) => {
+            println!("Parked {}", result.path);
+        }
+        Response::ProjectUnpark(result) => {
+            println!("Removed {} project(s).", result.removed_projects);
+        }
+        Response::ProjectLink(project) | Response::ProjectDetail(project) => {
+            print_project_row(project);
+        }
+        Response::ProjectUnlink(result) => {
+            if result.removed {
+                println!("Project unlinked.");
+            } else {
+                println!("Project not found.");
+            }
+        }
+        Response::ProjectList(result) => {
+            if result.projects.is_empty() {
+                println!("No projects registered.");
+            }
+            for project in &result.projects {
+                print_project_row(project);
+            }
+        }
+        Response::ProjectTrust(result) => {
+            println!("Trust set for {}.", result.project_id);
+        }
+        Response::ProjectRoute(result) => {
+            println!("Route set to {}.", result.route);
+        }
+        Response::Error(error) => {
+            return Err(map_server_error(error.clone()));
+        }
+        _ => println!("Unexpected project response."),
+    }
+    Ok(())
+}
+
+fn print_project_row(project: &nerd_core::runtime::ProjectInfo) {
+    match &project.route_name {
+        Some(route) => println!(
+            "{:<12} {:<10} {:<6} manifest:{} https-route {}.test",
+            project.name,
+            project.status.as_str(),
+            project.kind.as_str(),
+            if project.manifest_valid {
+                "ok"
+            } else {
+                "invalid"
+            },
+            route
+        ),
+        None => println!(
+            "{:<12} {:<10} {:<6} manifest:{} (no route)",
+            project.name,
+            project.status.as_str(),
+            project.kind.as_str(),
+            if project.manifest_valid {
+                "ok"
+            } else {
+                "invalid"
+            },
+        ),
+    }
+    if !project.manifest_valid
+        && let Some(reason) = &project.manifest_reason
+    {
+        println!("  manifest error: {reason}");
+    }
 }
 
 fn run_network(action: NetworkAction) -> Result<(), CliError> {
@@ -534,6 +672,29 @@ fn parse_command(mut arguments: impl Iterator<Item = OsString>) -> Result<Comman
             let arg = arg.map(|value| value.to_string_lossy().into_owned());
             Ok(Command::Runtime { action, arg })
         }
+        "project" => {
+            let action = arguments.next().ok_or(CliError::Usage)?;
+            let action = ProjectAction::parse(&action.to_string_lossy())?;
+            let first = arguments.next();
+            if matches!(action, ProjectAction::List) && first.is_some() {
+                return Err(CliError::Usage);
+            }
+            if !matches!(action, ProjectAction::Route) && arguments.next().is_some() {
+                return Err(CliError::Usage);
+            }
+            let mut args: Vec<String> = Vec::new();
+            if let Some(value) = first {
+                args.push(value.to_string_lossy().into_owned());
+            }
+            if matches!(action, ProjectAction::Route) {
+                let second = arguments.next().ok_or(CliError::Usage)?;
+                if arguments.next().is_some() {
+                    return Err(CliError::Usage);
+                }
+                args.push(second.to_string_lossy().into_owned());
+            }
+            Ok(Command::Project { action, args })
+        }
         _ => Err(CliError::Usage),
     }
 }
@@ -549,6 +710,10 @@ enum Command {
         action: RuntimeAction,
         arg: Option<String>,
     },
+    Project {
+        action: ProjectAction,
+        args: Vec<String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -560,6 +725,18 @@ enum RuntimeAction {
     Add,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectAction {
+    Park,
+    Unpark,
+    Link,
+    Unlink,
+    List,
+    Detail,
+    Trust,
+    Route,
+}
+
 impl RuntimeAction {
     fn parse(value: &str) -> Result<Self, CliError> {
         match value {
@@ -568,6 +745,22 @@ impl RuntimeAction {
             "remove" => Ok(Self::Remove),
             "set-default" => Ok(Self::SetDefault),
             "add" => Ok(Self::Add),
+            _ => Err(CliError::Usage),
+        }
+    }
+}
+
+impl ProjectAction {
+    fn parse(value: &str) -> Result<Self, CliError> {
+        match value {
+            "park" => Ok(Self::Park),
+            "unpark" => Ok(Self::Unpark),
+            "link" => Ok(Self::Link),
+            "unlink" => Ok(Self::Unlink),
+            "list" => Ok(Self::List),
+            "detail" => Ok(Self::Detail),
+            "trust" => Ok(Self::Trust),
+            "route" => Ok(Self::Route),
             _ => Err(CliError::Usage),
         }
     }

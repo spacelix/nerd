@@ -2,7 +2,7 @@ use rusqlite::{Connection, TransactionBehavior, params};
 
 use super::{StateError, StateIntegrityViolation, unix_timestamp_ms};
 
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 2;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 3;
 pub const APPLICATION_ID: u32 = 0x4E45_5244;
 
 const SCHEMA_MIGRATIONS_SQL: &str = r#"
@@ -72,6 +72,52 @@ const RUNTIMES_SQL: &str = r#"
     ) WITHOUT ROWID;
 "#;
 
+const PROJECTS_SQL: &str = r#"
+    CREATE TABLE projects (
+        project_id TEXT PRIMARY KEY CHECK (length(project_id) = 36),
+        kind TEXT NOT NULL CHECK (kind IN ('parked', 'linked')),
+        path TEXT NOT NULL UNIQUE CHECK (length(path) BETWEEN 1 AND 1024),
+        dir_volume_serial INTEGER NOT NULL,
+        dir_file_id INTEGER NOT NULL,
+        name TEXT NOT NULL CHECK (
+            length(name) BETWEEN 1 AND 63
+            AND name = lower(name)
+            AND trim(name, 'abcdefghijklmnopqrstuvwxyz0123456789-') = ''
+        ),
+        status TEXT NOT NULL CHECK (status IN ('untrusted', 'trusted', 'conflict', 'missing', 'replaced', 'unsupported')),
+        manifest_valid INTEGER NOT NULL CHECK (manifest_valid IN (0, 1)),
+        manifest_reason TEXT CHECK (
+            manifest_reason IS NULL OR length(manifest_reason) BETWEEN 1 AND 512
+        ),
+        registered_at_unix_ms INTEGER NOT NULL CHECK (registered_at_unix_ms >= 0)
+    ) WITHOUT ROWID;
+"#;
+
+const PROJECT_ROUTES_SQL: &str = r#"
+    CREATE TABLE project_routes (
+        route_name TEXT PRIMARY KEY CHECK (
+            length(route_name) BETWEEN 1 AND 63
+            AND route_name = lower(route_name)
+            AND trim(route_name, 'abcdefghijklmnopqrstuvwxyz0123456789-') = ''
+        ),
+        project_id TEXT NOT NULL REFERENCES projects(project_id),
+        source TEXT NOT NULL CHECK (source IN ('derived', 'explicit'))
+    ) WITHOUT ROWID;
+"#;
+
+const PROJECT_TRUST_SQL: &str = r#"
+    CREATE TABLE project_trust (
+        project_id TEXT PRIMARY KEY REFERENCES projects(project_id),
+        trust_kind TEXT NOT NULL CHECK (trust_kind IN ('untrusted', 'trusted')),
+        directory_volume_serial INTEGER NOT NULL,
+        directory_file_id INTEGER NOT NULL,
+        repository_identity TEXT CHECK (
+            repository_identity IS NULL OR length(repository_identity) BETWEEN 1 AND 512
+        ),
+        trusted_at_unix_ms INTEGER CHECK (trusted_at_unix_ms >= 0)
+    ) WITHOUT ROWID;
+"#;
+
 const FOUNDATION_STATEMENTS: &[&str] = &[
     SCHEMA_MIGRATIONS_SQL,
     GLOBAL_SETTINGS_SQL,
@@ -82,11 +128,16 @@ const FOUNDATION_STATEMENTS: &[&str] = &[
 
 const RUNTIMES_STATEMENTS: &[&str] = &[RUNTIMES_SQL];
 
+const PROJECT_STATEMENTS: &[&str] = &[PROJECTS_SQL, PROJECT_ROUTES_SQL, PROJECT_TRUST_SQL];
+
 const EXPECTED_TABLES: &[(&str, &str)] = &[
     ("artifact_inventory", ARTIFACT_INVENTORY_SQL),
     ("global_settings", GLOBAL_SETTINGS_SQL),
     ("operation_history", OPERATION_HISTORY_SQL),
     ("project_registry", PROJECT_REGISTRY_SQL),
+    ("project_routes", PROJECT_ROUTES_SQL),
+    ("project_trust", PROJECT_TRUST_SQL),
+    ("projects", PROJECTS_SQL),
     ("runtimes", RUNTIMES_SQL),
     ("schema_migrations", SCHEMA_MIGRATIONS_SQL),
 ];
@@ -107,6 +158,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 2,
         name: "node_runtimes",
         statements: RUNTIMES_STATEMENTS,
+    },
+    Migration {
+        version: 3,
+        name: "project_discovery",
+        statements: PROJECT_STATEMENTS,
     },
 ];
 
