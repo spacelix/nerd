@@ -19,7 +19,7 @@ use std::{
 };
 
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, INVALID_HANDLE_VALUE, WAIT_OBJECT_0},
+    Foundation::{CloseHandle, ERROR_MORE_DATA, INVALID_HANDLE_VALUE, WAIT_OBJECT_0},
     Storage::FileSystem::{
         CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE_DIR_NAME,
         FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_SHARE_DELETE,
@@ -80,11 +80,12 @@ pub struct Watcher {
 }
 
 struct WatchThread {
+    directory: *mut c_void,
     stop_event: *mut c_void,
 }
 
-// The stop event HANDLE is an opaque pointer owned by the worker thread and
-// closed there before exit; the coordinator only signals it via SetEvent.
+// HANDLEs are opaque integer resources; ownership lives on the coordinator
+// (WatchThread) and the handles are closed exactly once in `Watcher::drop`.
 unsafe impl Send for WatchThread {}
 
 impl Watcher {
@@ -127,9 +128,8 @@ impl Watcher {
 
 impl Drop for Watcher {
     fn drop(&mut self) {
-        // The relay thread exits when `sender` drops. Root workers block inside
-        // ReadDirectoryChangesW and cannot be interrupted synchronously; they are
-        // detached here and die with the process, which also closes their handles.
+        // Closing the directory handle breaks the worker's blocking
+        // ReadDirectoryChangesW call, letting the thread exit cleanly.
         let threads = match self.threads.lock() {
             Ok(mut guard) => std::mem::take(&mut *guard),
             Err(poisoned) => {
@@ -138,10 +138,19 @@ impl Drop for Watcher {
             }
         };
         for thread in threads {
+            if !thread.directory.is_null() {
+                // SAFETY: `directory` is owned by this coordinator and closed
+                // exactly once here, after which the worker observes EOF.
+                unsafe {
+                    CloseHandle(thread.directory);
+                }
+            }
             if !thread.stop_event.is_null() {
-                // SAFETY: `stop_event` is a live event HANDLE while the worker runs.
+                // SAFETY: `stop_event` is owned by this coordinator and closed
+                // exactly once here.
                 unsafe {
                     SetEvent(thread.stop_event);
+                    CloseHandle(thread.stop_event);
                 }
             }
         }
@@ -184,8 +193,9 @@ fn spawn_root_watcher(
     }
 
     let root_for_thread = root.clone();
-    // The whole handle bundle moves into the worker so the closure itself only
-    // captures the Send bundle (field access happens inside the callee).
+    // The worker borrows the handle bundle; ownership stays on the coordinator
+    // so `Watcher::drop` can close the directory handle to break the blocking
+    // ReadDirectoryChangesW call and then close the event handle.
     let handles = ThreadHandles {
         directory,
         stop_event,
@@ -201,7 +211,10 @@ fn spawn_root_watcher(
             run_root_loop(root_for_thread, handles, sender);
         })?;
 
-    Ok(WatchThread { stop_event })
+    Ok(WatchThread {
+        directory,
+        stop_event,
+    })
 }
 
 fn run_root_loop(root: PathBuf, handles: ThreadHandles, sender: Sender<WatchEvent>) {
@@ -210,7 +223,8 @@ fn run_root_loop(root: PathBuf, handles: ThreadHandles, sender: Sender<WatchEven
     let mut buffer = vec![0u8; BUFFER_BYTES];
     loop {
         let mut bytes_returned = 0u32;
-        // Blocking overlapped-free read; returns when an event fires or on stop cleanup.
+        // Blocking overlapped-free read; returns when an event fires or the
+        // coordinator closes the directory handle.
         // SAFETY: `buffer` is valid for `BUFFER_BYTES` writes; `directory` is open.
         let ok = unsafe {
             ReadDirectoryChangesW(
@@ -227,12 +241,21 @@ fn run_root_loop(root: PathBuf, handles: ThreadHandles, sender: Sender<WatchEven
             )
         };
         if ok == 0 {
+            // Buffer overflow (ERROR_MORE_DATA) is recoverable; a real failure
+            // (including the directory handle being closed for shutdown) ends
+            // the thread without touching the handles owned by the coordinator.
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() == Some(ERROR_MORE_DATA as i32) {
+                let _ = sender.send(WatchEvent { root: root.clone() });
+                continue;
+            }
             break;
         }
+        if bytes_returned == 0 {
+            continue;
+        }
 
-        // Non-blocking stop check: PeekNamedPipe equivalent is unavailable for
-        // directories, so stop relies on process exit tearing down the blocking
-        // call or handle closure by the coordinator.
+        // Non-blocking stop check after each batch.
         parse_notifications(&buffer[..bytes_returned as usize]);
         let _ = &root;
         let _ = sender.send(WatchEvent { root: root.clone() });
@@ -243,11 +266,8 @@ fn run_root_loop(root: PathBuf, handles: ThreadHandles, sender: Sender<WatchEven
             break;
         }
     }
-    // SAFETY: both handles were opened for this worker thread.
-    unsafe {
-        CloseHandle(directory);
-        CloseHandle(stop_event);
-    }
+    // The directory and event handles are owned by the coordinator and are
+    // closed in `Watcher::drop`; the worker never closes them.
 }
 
 fn parse_notifications(buffer: &[u8]) {

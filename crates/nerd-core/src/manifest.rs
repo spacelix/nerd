@@ -56,9 +56,16 @@ impl fmt::Display for ManifestError {
 
 impl std::error::Error for ManifestError {}
 
-const RESERVED_ENV_KEY_PATTERN: &[&str] = &[
+const RESERVED_ENV_KEY_WORDS: &[&str] = &[
     "secret", "token", "password", "passwd", "apikey", "api_key", "private", "port",
 ];
+
+/// True when any underscore-separated word of the key is a reserved word.
+fn has_reserved_env_word(key: &str) -> bool {
+    key.to_ascii_lowercase()
+        .split('_')
+        .any(|word| RESERVED_ENV_KEY_WORDS.contains(&word))
+}
 
 /// Parse `nerd.json` text into a validated manifest.
 pub fn parse(text: &str) -> Result<Manifest, ManifestError> {
@@ -193,10 +200,7 @@ pub fn parse(text: &str) -> Result<Manifest, ManifestError> {
                             .to_owned(),
                     });
                 }
-                if RESERVED_ENV_KEY_PATTERN
-                    .iter()
-                    .any(|pattern| key.to_ascii_lowercase().contains(pattern))
-                {
+                if has_reserved_env_word(key) {
                     return Err(ManifestError::ProhibitedEnvKey(format!("env.{key}")));
                 }
                 let value = value.as_str().ok_or_else(|| ManifestError::InvalidValue {

@@ -46,21 +46,29 @@ pub fn preflight(path: &Path) -> Result<(), LocationError> {
         return Err(LocationError::RelativePath);
     }
     let text = path.to_string_lossy();
-    // Strip the Windows verbatim prefix ("\\?\") that Path::canonicalize
-    // emits so normal and verbatim forms share one code path.
     let mut normalized = text.replace('/', "\\");
-    if let Some(stripped) = normalized.clone().strip_prefix(r"\\?\") {
+    // UNC with or without the verbatim prefix is always rejected.
+    if normalized.starts_with(r"\\?\UNC\") {
+        return Err(LocationError::UncPath);
+    }
+    // Strip the verbatim prefix ("\\?\") that Path::canonicalize emits.
+    if let Some(stripped) = normalized.strip_prefix(r"\\?\") {
         normalized = stripped.to_owned();
     }
     if normalized.starts_with("\\\\") || normalized.starts_with("//") {
         return Err(LocationError::UncPath);
     }
+    if normalized.len() < 3 {
+        return Err(LocationError::UnsupportedPath(normalized));
+    }
+    let drive_letter = normalized.as_bytes()[0];
+    if !drive_letter.is_ascii_alphabetic() || normalized.as_bytes()[1] != b':' {
+        return Err(LocationError::UnsupportedPath(normalized));
+    }
 
     // "C:\" form for the API call.
-    let wide_drive: Vec<u16> = format!("{}\\", &normalized[..3])
-        .encode_utf16()
-        .chain([0])
-        .collect();
+    let drive_root = format!("{}\\", &normalized[..3]);
+    let wide_drive: Vec<u16> = drive_root.encode_utf16().chain([0]).collect();
 
     // SAFETY: `wide_drive` is NUL-terminated for this call.
     let drive_type = unsafe { GetDriveTypeW(wide_drive.as_ptr()) };

@@ -295,13 +295,25 @@ impl ProjectService {
                 ProjectStatus::Replaced
             }
             _ => {
-                let trusted = matches!(
-                    self.state.get_trust(project_id).await?,
-                    Some(trust) if trust.trust_kind == TrustKind::Trusted,
+                // Trust survives rename (identity seen at a different path) and
+                // a no-op reconcile (identity unchanged at the same path). It is
+                // invalidated only by replacement.
+                let identity_intact = matches!(
+                    &existing_same_identity,
+                    Some(other) if other.project_id == project_id
+                ) || matches!(
+                    &existing_same_path,
+                    Some(same)
+                        if same.project_id == project_id
+                            && same.dir_volume_serial == identity.volume_serial
+                            && same.dir_file_id == identity.file_id
                 );
-                if trusted
-                    && matches!(&existing_same_identity, Some(other) if other.project_id == project_id)
-                {
+                let trusted = identity_intact
+                    && matches!(
+                        self.state.get_trust(project_id).await?,
+                        Some(trust) if trust.trust_kind == TrustKind::Trusted,
+                    );
+                if trusted {
                     ProjectStatus::Trusted
                 } else {
                     ProjectStatus::Untrusted
@@ -385,10 +397,7 @@ impl ProjectService {
                     .filter(|p| p.name.eq_ignore_ascii_case(&route_name))
                 {
                     let mut updated = record.clone();
-                    if matches!(
-                        updated.status,
-                        ProjectStatus::Untrusted | ProjectStatus::Trusted
-                    ) {
+                    if updated.status != ProjectStatus::Conflict {
                         updated.status = ProjectStatus::Conflict;
                         self.state.upsert_project(&updated).await?;
                     }

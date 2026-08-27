@@ -398,7 +398,7 @@
         },
         "manifestValid": { "type": "boolean" },
         "manifestReason": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "routeName": { "type": "string", "minLength": 1 }
+        "routeName": { "type": ["string", "null"], "minLength": 1 }
       }
     },
     "responseEnvelope": {

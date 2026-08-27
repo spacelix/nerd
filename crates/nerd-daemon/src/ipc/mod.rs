@@ -494,7 +494,8 @@ async fn handle_connection(
             Request::ProjectLink(request) => {
                 match context.projects.link(Path::new(&request.path)).await {
                     Ok(record) => {
-                        Response::ProjectLink(into_project_info(record, &context.state).await)
+                        let routes = routes_map(&context.state).await;
+                        Response::ProjectLink(into_project_info(record, &routes))
                     }
                     Err(error) => Response::Error(project_error(error)),
                 }
@@ -505,9 +506,10 @@ async fn handle_connection(
             },
             Request::ProjectList(_) => match context.projects.list().await {
                 Ok(records) => {
+                    let routes = routes_map(&context.state).await;
                     let mut projects = Vec::with_capacity(records.len());
                     for record in records {
-                        projects.push(into_project_info(record, &context.state).await);
+                        projects.push(into_project_info(record, &routes));
                     }
                     Response::ProjectList(ProjectListResponse { projects })
                 }
@@ -515,7 +517,8 @@ async fn handle_connection(
             },
             Request::ProjectDetail(request) => match context.projects.detail(&request.name).await {
                 Ok(record) => {
-                    Response::ProjectDetail(into_project_info(record, &context.state).await)
+                    let routes = routes_map(&context.state).await;
+                    Response::ProjectDetail(into_project_info(record, &routes))
                 }
                 Err(error) => Response::Error(project_error(error)),
             },
@@ -667,22 +670,19 @@ fn project_error(error: ProjectError) -> ErrorResponse {
     use crate::project::ProjectError as E;
     let message = error.to_string();
     let code = match &error {
-        E::NotAProject(_) | E::NotFound(_) | E::Unsupported(_) => ErrorCode::InvalidRequest,
+        E::NotAProject(_) | E::NotFound(_) | E::Unsupported(_) | E::Manifest(_) => {
+            ErrorCode::InvalidRequest
+        }
         _ => ErrorCode::Internal,
     };
     ErrorResponse::new(code, message, false)
 }
 
-async fn into_project_info(
+fn into_project_info(
     record: crate::state::ProjectRecord,
-    state: &StateClient,
+    routes: &std::collections::HashMap<Uuid, String>,
 ) -> nerd_core::runtime::ProjectInfo {
-    let route_name = state.list_routes().await.ok().and_then(|routes| {
-        routes
-            .into_iter()
-            .find(|route| route.project_id == record.project_id)
-            .map(|route| route.route_name)
-    });
+    let route_name = routes.get(&record.project_id).cloned();
     nerd_core::runtime::ProjectInfo {
         project_id: record.project_id,
         kind: match record.kind {
@@ -705,6 +705,20 @@ async fn into_project_info(
         manifest_reason: record.manifest_reason,
         route_name,
     }
+}
+
+async fn routes_map(state: &StateClient) -> std::collections::HashMap<Uuid, String> {
+    state
+        .list_routes()
+        .await
+        .ok()
+        .map(|routes| {
+            routes
+                .into_iter()
+                .map(|route| (route.project_id, route.route_name))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn node_error(error: crate::node::NodeError) -> ErrorResponse {
