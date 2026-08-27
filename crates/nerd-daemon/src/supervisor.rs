@@ -32,10 +32,14 @@ pub struct RunConfig {
     pub project_id: Uuid,
     pub project_dir: PathBuf,
     pub node_exe: PathBuf,
-    pub command: String,
+    /// npm script name (e.g. "dev").
+    pub script: String,
+    /// Arguments passed to the script after `npm run <script>`.
     pub args: Vec<String>,
     pub port: u16,
     pub port_is_env: bool,
+    /// Optional HTTP readiness path; when set, readiness is an HTTP GET.
+    pub readiness_path: Option<String>,
 }
 
 /// Bounded, redacting log buffer shared with the UI.
@@ -91,6 +95,7 @@ pub struct SupervisedRun {
     pub logs: Arc<LogBuffer>,
     pub state: LifecycleState,
     pub port: u16,
+    readiness_path: Option<String>,
 }
 
 impl SupervisedRun {
@@ -100,9 +105,18 @@ impl SupervisedRun {
 
         let job = ProcessJob::create().map_err(|error| error.to_string())?;
 
-        let mut command = Command::new(&config.command);
+        // npm ships with every Node distribution; run the script through it so
+        // `npm run <script>` resolves with the isolated PATH.
+        let npm_cmd = config
+            .node_exe
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("npm.cmd");
+        let mut command = Command::new(npm_cmd);
+        let mut full_args = vec!["run".to_owned(), config.script.clone()];
+        full_args.extend(config.args.clone());
         command
-            .args(&config.args)
+            .args(&full_args)
             .current_dir(&config.project_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -148,32 +162,68 @@ impl SupervisedRun {
             logs,
             state: LifecycleState::StartingApp,
             port: config.port,
+            readiness_path: config.readiness_path.clone(),
         })
-    }
-
-    /// Wait for readiness (TCP connect to the internal port) or timeout.
-    pub fn wait_ready(&mut self, timeout: Duration) -> LifecycleState {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if self.try_wait().is_ok_and(|status| status.is_some()) {
-                self.state = LifecycleState::Failed;
-                return self.state;
-            }
-            if std::net::TcpStream::connect(("127.0.0.1", self.port)).is_ok() {
-                self.state = LifecycleState::Running;
-                return self.state;
-            }
-            if Instant::now() >= deadline {
-                self.state = LifecycleState::Failed;
-                return self.state;
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        }
     }
 
     pub fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
         self.child.try_wait()
     }
+
+    fn config_readiness_path(&self) -> Option<String> {
+        self.readiness_path.clone()
+    }
+}
+
+/// Wait for readiness (HTTP GET to the readiness path when configured, else a
+/// TCP connect to the internal port) or timeout. On timeout the whole job tree
+/// is terminated so no orphan process survives.
+pub fn wait_ready(run: &mut SupervisedRun, timeout: Duration, group_id: u32) -> LifecycleState {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if run.try_wait().is_ok_and(|status| status.is_some()) {
+            run.state = LifecycleState::Failed;
+            return run.state;
+        }
+        if readiness_ok(run.port, run.config_readiness_path()) {
+            run.state = LifecycleState::Running;
+            return run.state;
+        }
+        if Instant::now() >= deadline {
+            // Kill the tree so a failed startup leaves no orphan process.
+            let _ = run.job.stop(group_id);
+            run.state = LifecycleState::Failed;
+            return run.state;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+fn readiness_ok(port: u16, readiness_path: Option<String>) -> bool {
+    match readiness_path {
+        Some(path) => http_get(port, &path).is_some(),
+        None => std::net::TcpStream::connect(("127.0.0.1", port)).is_ok(),
+    }
+}
+
+/// Minimal HTTP GET used for readiness probing; returns status on success.
+fn http_get(port: u16, path: &str) -> Option<u16> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n",
+        if path.is_empty() { "/" } else { path }
+    );
+    stream.write_all(request.as_bytes()).ok()?;
+    let mut response = [0u8; 2048];
+    let n = stream.read(&mut response).ok()?;
+    let text = String::from_utf8_lossy(&response[..n]);
+    text.lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .filter(|code| (200..400).contains(code))
 }
 
 /// Graceful then forced shutdown of the whole job tree. `group_id` is the

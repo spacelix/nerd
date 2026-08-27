@@ -37,6 +37,13 @@ pub struct ControlManager {
     node: NodeManager,
 }
 
+#[derive(Clone, Debug)]
+pub struct StartOutcome {
+    pub project_id: Uuid,
+    pub port: Option<u16>,
+    pub requires_approval: bool,
+}
+
 impl ControlManager {
     pub fn new(preflight: PreflightService, node: NodeManager) -> Self {
         Self {
@@ -48,19 +55,17 @@ impl ControlManager {
         }
     }
 
-    /// Start a project. When the preflight needs approval, the caller must
-    /// have provided an explicit approval token.
-    pub async fn start(
-        &self,
-        name: &str,
-        approved: bool,
-    ) -> Result<(Uuid, u16, bool), PreflightError> {
+    /// Start a project. When the preflight needs approval and none was
+    /// provided, the outcome signals it without spawning.
+    pub async fn start(&self, name: &str, approved: bool) -> Result<StartOutcome, PreflightError> {
         let runtime = self.preflight.build(name, 0).await?;
 
         if !approved && self.preflight.needs_approval(&runtime) {
-            return Err(PreflightError::RuntimeUnavailable(
-                "project requires explicit Trust and Start approval".to_owned(),
-            ));
+            return Ok(StartOutcome {
+                project_id: runtime.project_id,
+                port: None,
+                requires_approval: true,
+            });
         }
         let _ = self.node;
 
@@ -79,13 +84,22 @@ impl ControlManager {
             project_id: runtime.project_id,
             project_dir: runtime.working_dir.clone(),
             node_exe: node_dir,
-            command: runtime.command.clone(),
+            script: runtime.command.clone(),
             args: runtime.args.clone(),
             port,
             port_is_env: matches!(runtime.port_kind, crate::framework::PortKind::Env),
+            readiness_path: None,
         };
-        let run = SupervisedRun::spawn(&config).map_err(PreflightError::RuntimeUnavailable)?;
+        let mut run = SupervisedRun::spawn(&config).map_err(PreflightError::RuntimeUnavailable)?;
         let group_id = run.child.id();
+        // Drive the lifecycle through readiness before recording the run.
+        let state =
+            crate::supervisor::wait_ready(&mut run, crate::supervisor::STARTUP_TIMEOUT, group_id);
+        if state == crate::lifecycle::LifecycleState::Failed {
+            return Err(PreflightError::RuntimeUnavailable(
+                "project failed to reach ready state; check the logs".to_owned(),
+            ));
+        }
         let logs = Arc::clone(&run.logs);
         self.logs
             .lock()
@@ -96,7 +110,11 @@ impl ControlManager {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(runtime.project_id, LiveRun { run, group_id });
 
-        Ok((runtime.project_id, port, false))
+        Ok(StartOutcome {
+            project_id: runtime.project_id,
+            port: Some(port),
+            requires_approval: false,
+        })
     }
 
     pub fn stop(&self, project_id: Uuid) -> bool {

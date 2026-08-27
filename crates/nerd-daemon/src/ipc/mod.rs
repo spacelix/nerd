@@ -560,10 +560,10 @@ async fn handle_connection(
             },
             Request::ProjectStart(request) => {
                 match context.control.start(&request.name, false).await {
-                    Ok((project_id, port, _)) => Response::ProjectStart(ProjectStartResponse {
-                        project_id,
-                        port,
-                        requires_approval: false,
+                    Ok(outcome) => Response::ProjectStart(ProjectStartResponse {
+                        project_id: outcome.project_id,
+                        port: outcome.port.unwrap_or(0),
+                        requires_approval: outcome.requires_approval,
                     }),
                     Err(error) => Response::Error(project_error_from_preflight(error)),
                 }

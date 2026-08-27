@@ -125,10 +125,8 @@ impl PreflightService {
             .map_err(|_| PreflightError::NoCommand(name.to_owned()))?;
         let scripts = parse_scripts(&package_json);
         let framework = crate::framework::detect(&package_json, scripts.as_str());
-        let dev_script = scripts
-            .lines()
-            .find_map(|line| line.split_once(':').map(|(_, v)| v.trim().to_owned()))
-            .unwrap_or_default();
+        // The script NAME (e.g. "dev") used for `npm run <name>`.
+        let dev_script = preferred_dev_script(&package_json);
 
         // Resolve runtime from nerd.json node field or default; re-probe.
         let (node_version, node_source, node_exe) = self.resolve_runtime(&record).await?;
@@ -146,7 +144,7 @@ impl PreflightService {
                     port,
                 )
             }
-            None => ("node".to_owned(), Vec::new(), PortKind::Env),
+            None => ("dev".to_owned(), Vec::new(), PortKind::Env),
         };
 
         Ok(Preflight {
@@ -194,11 +192,12 @@ impl PreflightService {
                     ))
                 })?
         } else {
+            // Newest managed Node wins the default resolution.
             runtimes
                 .iter()
                 .filter(|r| r.tool == "node")
-                .max_by_key(|r| {
-                    crate::version::compare_versions(&r.version, &r.version)
+                .max_by(|a, b| {
+                    crate::version::compare_versions(&a.version, &b.version)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .cloned()
@@ -258,4 +257,21 @@ fn parse_scripts(package_json: &str) -> String {
                 .join("\n")
         })
         .unwrap_or_default()
+}
+
+/// Prefer the `dev` script when it exists; otherwise the first script.
+fn preferred_dev_script(package_json: &str) -> String {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(package_json) else {
+        return "dev".to_owned();
+    };
+    let scripts = value.get("scripts").and_then(|v| v.as_object());
+    match scripts {
+        Some(scripts) => scripts
+            .get("dev")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned())
+            .or_else(|| scripts.keys().next().cloned())
+            .unwrap_or_else(|| "dev".to_owned()),
+        None => "dev".to_owned(),
+    }
 }
