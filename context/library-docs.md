@@ -255,6 +255,57 @@ Versions are exact for the Feature 03 implementation. Updating one requires read
 - Allowed modules: `nerd-daemon::node`
 - Verification: tampered-archive rejection test
 
+## Feature 06 Dependencies
+
+Versions are exact for the Feature 06 implementation. Updating one requires reading the new official documentation and rerunning all Feature 06 checks.
+
+### hyper
+
+- Version policy: `=1.11.0`, features `http1`, `server`, `client`
+- Feature: loopback reverse proxy (HTTP and HTTPS) with streaming passthrough, SSE, and WebSocket upgrade support
+- Why needed: full-duplex streaming proxy with backpressure; hyper does not buffer bodies
+- Official docs: https://docs.rs/hyper/1.11.0/hyper/
+- Security boundary: binds loopback only; never routes to `.test` upstreams or Nerd listener ports; unknown hosts rejected
+- Allowed modules: `nerd-daemon::proxy`
+- Prohibited usage: non-loopback binding, body buffering for WS/SSE, trusting client forwarded headers
+- Verification: streaming memory bound, WS echo, SSE, malformed host, anti-loop tests
+
+### hyper-util
+
+- Version policy: `=0.1.20`, feature `tokio`
+- Feature: HTTP/1 server builder and legacy client connectors on tokio
+- Why needed: hyper 1.x splits connection handling into hyper-util
+- Official docs: https://docs.rs/hyper-util/0.1.20/hyper_util/
+- Allowed modules: `nerd-daemon::proxy`
+- Verification: proxy integration tests
+
+### http and http-body-util
+
+- Version policy: `http =1.5.0`, `http-body-util =0.1.5`
+- Feature: request/response types and body helpers for proxy construction
+- Official docs: https://docs.rs/http/1.5.0/http/ and https://docs.rs/http-body-util/0.1.5/http_body_util/
+- Allowed modules: `nerd-daemon::proxy`
+- Verification: header and body handling tests
+
+### tokio-rustls and rustls
+
+- Version policy: `tokio-rustls =0.26.4` (ring, tls12), `rustls =0.23.43` (ring)
+- Feature: TLS termination on loopback 443 with per-route leaf certificates from `cert::issue_leaf`
+- Why needed: trusted HTTPS for `route.test` through the proxy
+- Official docs: https://docs.rs/tokio-rustls/0.26.4/tokio_rustls/ and https://docs.rs/rustls/0.23.43/rustls/
+- Security boundary: leaf SAN exactly covers the validated hostname; keys never enter logs or IPC
+- Allowed modules: `nerd-daemon::proxy`, `nerd-daemon::tls`
+- Verification: trusted HTTPS handshake per framework fixture
+
+### rustls-pki-types
+
+- Version policy: `=1.15.1`, features `alloc`, `pem`
+- Feature: parse leaf certificate and PKCS#8 key PEM from `cert::issue_leaf` output
+- Why needed: `rustls-pemfile` carries RUSTSEC-2025-0134 (unmaintained); pki-types is the maintained upstream parser used by rustls itself
+- Official docs: https://docs.rs/rustls-pki-types/1.15.1/rustls_pki_types/
+- Allowed modules: `nerd-daemon::tls`
+- Verification: HTTPS handshake per framework fixture
+
 ## Service Distribution Rules
 
 Every service adapter must document before implementation:

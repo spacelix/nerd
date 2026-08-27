@@ -13,6 +13,7 @@ use crate::{
     node::NodeManager,
     port_allocator::PortAllocator,
     preflight::{PreflightError, PreflightService},
+    state::StateClient,
     supervisor::{LogBuffer, RunConfig, SupervisedRun, stop_run, wait_child_exit},
 };
 
@@ -22,6 +23,13 @@ pub struct RunSnapshot {
     pub state: LifecycleState,
     pub port: Option<u16>,
     pub failure: Option<String>,
+}
+
+/// Registered project route mapping used by the proxy for host resolution.
+#[derive(Clone, Debug)]
+pub struct RegisteredProject {
+    pub project_id: Uuid,
+    pub route: Option<String>,
 }
 
 struct LiveRun {
@@ -35,6 +43,7 @@ pub struct ControlManager {
     ports: PortAllocator,
     preflight: PreflightService,
     node: NodeManager,
+    state: StateClient,
 }
 
 #[derive(Clone, Debug)]
@@ -45,14 +54,42 @@ pub struct StartOutcome {
 }
 
 impl ControlManager {
-    pub fn new(preflight: PreflightService, node: NodeManager) -> Self {
+    pub fn new(state: StateClient, preflight: PreflightService, node: NodeManager) -> Self {
         Self {
             runs: Mutex::new(BTreeMap::new()),
             logs: Mutex::new(BTreeMap::new()),
             ports: PortAllocator::default(),
             preflight,
             node,
+            state,
         }
+    }
+
+    /// List registered projects with their active route names (for proxy host
+    /// resolution). Only routable states participate; conflict, missing,
+    /// replaced, and unsupported projects never receive an ambiguous route.
+    pub async fn list_registered(&self) -> Vec<RegisteredProject> {
+        let Ok(routes) = self.state.list_routes().await else {
+            return Vec::new();
+        };
+        let Ok(projects) = self.state.list_projects().await else {
+            return Vec::new();
+        };
+        let mut by_id: std::collections::HashMap<Uuid, String> = routes
+            .into_iter()
+            .map(|route| (route.project_id, route.route_name))
+            .collect();
+        projects
+            .into_iter()
+            .filter(|project| {
+                use crate::state::ProjectStatus as S;
+                matches!(project.status, S::Untrusted | S::Trusted)
+            })
+            .map(|project| RegisteredProject {
+                project_id: project.project_id,
+                route: by_id.remove(&project.project_id).or(Some(project.name)),
+            })
+            .collect()
     }
 
     /// Start a project. When the preflight needs approval and none was
