@@ -76,6 +76,7 @@ fn header_value(value: &str) -> http::HeaderValue {
 async fn proxy_http(
     ctx: &ProxyContext,
     req: Request<Incoming>,
+    proto: &str,
 ) -> Result<Response<Body>, std::io::Error> {
     // Reject proxy loops: never forward to a `.test` upstream or to Nerd's own
     // listener ports.
@@ -133,7 +134,7 @@ async fn proxy_http(
     set_forwarded(
         &mut forwarded_req,
         host_value.as_deref().unwrap_or(""),
-        "http",
+        proto,
     );
 
     let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(upstream))
@@ -236,7 +237,7 @@ async fn serve_http(listener: TcpListener, ctx: Arc<ProxyContext>) -> Result<(),
             let io = TokioIo::new(stream);
             let service = service_fn(move |req| {
                 let ctx = ctx.clone();
-                async move { proxy_http(&ctx, req).await }
+                async move { proxy_http(&ctx, req, "http").await }
             });
             let _ = http1::Builder::new()
                 .timer(TokioTimer::new())
@@ -252,22 +253,20 @@ async fn serve_https(
     ctx: Arc<ProxyContext>,
     ca_key: Arc<str>,
 ) -> Result<(), std::io::Error> {
+    // Build the SNI resolver once; it lazily issues and caches a leaf config
+    // per requested hostname so every `name.test` certificate matches.
+    let acceptor = match tls::RouteCertResolver::new(ca_key).build_acceptor() {
+        Ok(acceptor) => acceptor,
+        Err(error) => {
+            tracing::warn!(error = %error, "https proxy: cannot build TLS resolver");
+            return Ok(());
+        }
+    };
     loop {
         let (stream, _) = listener.accept().await?;
         let ctx = Arc::clone(&ctx);
-        let ca_key = ca_key.clone();
+        let acceptor = acceptor.clone();
         tokio::spawn(async move {
-            // SNI-driven leaf selection: resolve the route from the TLS
-            // server name, then build a config for that hostname.
-            let hostname = "localhost";
-            let _ = hostname;
-            let acceptor = match tls::server_config_for("localhost", &ca_key) {
-                Ok(acceptor) => acceptor,
-                Err(error) => {
-                    tracing::warn!(error = %error, "https proxy: cannot build TLS config");
-                    return;
-                }
-            };
             let tls_stream = match acceptor.accept(stream).await {
                 Ok(stream) => stream,
                 Err(_) => return,
@@ -275,7 +274,7 @@ async fn serve_https(
             let io = TokioIo::new(tls_stream);
             let service = service_fn(move |req| {
                 let ctx = ctx.clone();
-                async move { proxy_http(&ctx, req).await }
+                async move { proxy_http(&ctx, req, "https").await }
             });
             let _ = http1::Builder::new()
                 .timer(TokioTimer::new())
