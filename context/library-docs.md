@@ -297,6 +297,15 @@ Versions are exact for the Feature 06 implementation. Updating one requires read
 - Allowed modules: `nerd-daemon::proxy`, `nerd-daemon::tls`
 - Verification: trusted HTTPS handshake per framework fixture
 
+### rustls-pki-types
+
+- Version policy: `=1.15.1`, features `alloc`, `pem`
+- Feature: parse leaf certificate and PKCS#8 key PEM from `cert::issue_leaf` output
+- Why needed: `rustls-pemfile` carries RUSTSEC-2025-0134 (unmaintained); pki-types is the maintained upstream parser used by rustls itself
+- Official docs: https://docs.rs/rustls-pki-types/1.15.1/rustls_pki_types/
+- Allowed modules: `nerd-daemon::tls`
+- Verification: HTTPS handshake per framework fixture
+
 ## Service Distribution Rules
 
 Every service adapter must document before implementation:

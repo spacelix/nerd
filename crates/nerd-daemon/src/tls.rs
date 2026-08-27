@@ -2,15 +2,16 @@
 //! issued from the Feature 02 root CA and rustls server config.
 
 use std::collections::HashMap;
-use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 
 use rustls::{
     ServerConfig,
     crypto::ring::sign::any_supported_type,
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
 };
+use rustls_pki_types::pem::PemObject;
 use tokio_rustls::TlsAcceptor;
 
 use crate::{cert, paths::AppPaths};
@@ -98,17 +99,11 @@ impl RouteCertResolver {
         let (leaf_pem, leaf_key_pem) =
             cert::issue_leaf(&[hostname.to_owned()], &self.ca_key).map_err(TlsError::Key)?;
 
-        let mut cert_reader = BufReader::new(leaf_pem.as_bytes());
-        let cert = rustls_pemfile::certs(&mut cert_reader)
-            .next()
-            .transpose()
-            .map_err(|error| TlsError::Parse(error.to_string()))?
-            .ok_or_else(|| TlsError::Parse("no certificate in leaf PEM".to_owned()))?;
-
-        let mut key_reader = BufReader::new(leaf_key_pem.as_bytes());
-        let key = rustls_pemfile::private_key(&mut key_reader)
-            .map_err(|error| TlsError::Parse(error.to_string()))?
-            .ok_or_else(|| TlsError::Parse("no private key in leaf PEM".to_owned()))?;
+        let cert = CertificateDer::from_pem_slice(leaf_pem.as_bytes())
+            .map_err(|error| TlsError::Parse(error.to_string()))?;
+        let pkcs8 = PrivatePkcs8KeyDer::from_pem_slice(leaf_key_pem.as_bytes())
+            .map_err(|error| TlsError::Parse(error.to_string()))?;
+        let key = PrivateKeyDer::from(pkcs8);
         let signing_key =
             any_supported_type(&key).map_err(|error| TlsError::Config(error.to_string()))?;
 
