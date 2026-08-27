@@ -5,9 +5,9 @@ Update this file whenever feature state changes. Only one feature may be `in pro
 ## Current Status
 
 - Phase: Phase 3 - Runtimes and Package Managers
-- In progress: None (Features 01-05 complete)
-- Last completed: Feature 05 - Frameworks and process supervision
-- Next: Start Feature 06 (Reverse proxy)
+- In progress: None (Features 01-06 complete)
+- Last completed: Feature 06 - Reverse proxy
+- Next: Start Feature 07 (Desktop, tray, CLI)
 
 ## Features
 
@@ -18,7 +18,7 @@ Update this file whenever feature state changes. Only one feature may be `in pro
 | 03 | Node runtime and package managers | `features/03-node-runtime-package-managers.md` | complete |
 | 04 | Project discovery and configuration | `features/04-project-discovery-config.md` | complete |
 | 05 | Frameworks and process supervision | `features/05-frameworks-process-supervision.md` | complete |
-| 06 | Reverse proxy | `features/06-reverse-proxy.md` | planned |
+| 06 | Reverse proxy | `features/06-reverse-proxy.md` | complete |
 | 07 | Desktop, tray, CLI | `features/07-desktop-tray-cli.md` | planned |
 | 08 | Request Inspector | `features/08-request-inspector.md` | planned |
 | 09 | Mail capture | `features/09-mail-capture.md` | planned |
